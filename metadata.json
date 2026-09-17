@@ -1,0 +1,6 @@
+{
+  "name": "VIT Bhopal Digital Twin",
+  "description": "One VIT Bhopal. One digital experience. Campus exploration, interactive map, navigation, live events, faculty cabin directory & indoor locator, verified publishers, and smart digital twin layer.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

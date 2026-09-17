@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+/* Apple Human Interface Typography & Smooth Rendering */
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle Apple-style Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Leaflet Custom Popup Styled like Apple Maps Callouts */
+.leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-popup-tip-container {
+  overflow: visible !important;
+}
+
+.leaflet-popup-tip {
+  background: #FFFFFF !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+.leaflet-container {
+  background: #E8ECE9 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", system-ui, sans-serif !important;
+  outline: none !important;
+}
+
+/* Smooth tile rendering & transitions */
+.leaflet-tile {
+  filter: saturate(1.05) contrast(1.02);
+  transition: opacity 0.2s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+}
+
+.leaflet-fade-anim .leaflet-tile {
+  will-change: opacity, transform;
+}
+
+.leaflet-zoom-anim .leaflet-zoom-animated {
+  transition: transform 0.28s cubic-bezier(0.2, 0, 0.2, 1) !important;
+  will-change: transform;
+}
+
+.leaflet-pan-anim {
+  transition: transform 0.35s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+  will-change: transform;
+}
+
+/* Marker hover and pop animation */
+.campus-marker-wrapper {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+  will-change: transform;
+}
+
+.campus-marker-wrapper:hover {
+  transform: translate(-50%, -18px) scale(1.1) !important;
+}
+
+.campus-marker-wrapper.is-selected {
+  transform: translate(-50%, -20px) scale(1.18) !important;
+}
+
+/* Walking route glow effect */
+@keyframes routeGlowPulse {
+  0%, 100% {
+    opacity: 0.35;
+    stroke-width: 9;
+  }
+  50% {
+    opacity: 0.6;
+    stroke-width: 11;
+  }
+}
+
+.route-glow-animated {
+  animation: routeGlowPulse 2.5s ease-in-out infinite;
+}
