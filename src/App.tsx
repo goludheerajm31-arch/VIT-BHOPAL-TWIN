@@ -17,6 +17,7 @@ import { LocationDetailPage } from './pages/LocationDetailPage';
 import { NavigationPage } from './pages/NavigationPage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
 import { FacultyDirectoryPage } from './pages/FacultyDirectoryPage';
+import { FacultyDashboard } from './pages/FacultyDashboard';
 import { AboutPage } from './pages/AboutPage';
 import { LoginPage } from './pages/LoginPage';
 import { StudentDashboard } from './pages/StudentDashboard';
@@ -59,6 +60,8 @@ export default function App() {
                 <Route path="/navigation" element={<NavigationPage />} />
                 <Route path="/navigate" element={<NavigationPage />} />
                 <Route path="/faculty" element={<FacultyDirectoryPage />} />
+                <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
+                <Route path="/faculty/portal" element={<Navigate to="/faculty/dashboard" replace />} />
                 <Route path="/cabins" element={<FacultyDirectoryPage />} />
                 <Route path="/announcements" element={<AnnouncementsPage />} />
                 <Route path="/about" element={<AboutPage />} />

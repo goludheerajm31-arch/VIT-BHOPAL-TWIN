@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { storage, DATA_CHANGE_EVENT } from '../services/storage';
 import { FacultyMember } from '../types';
 import { FacultyCabinCard } from '../components/faculty/FacultyCabinCard';
@@ -7,12 +7,12 @@ import { AddFacultyModal } from '../components/faculty/AddFacultyModal';
 import { ConfirmModal } from '../components/common/ConfirmModal';
 import { useToast } from '../components/layout/Toast';
 import { useAuth } from '../services/auth';
-import { Search, X, Plus, RotateCcw } from 'lucide-react';
+import { Search, X, Plus, RotateCcw, GraduationCap } from 'lucide-react';
 
 export const FacultyDirectoryPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const isAdmin = role === 'ADMIN';
 
   const [facultyList, setFacultyList] = useState<FacultyMember[]>([]);
@@ -195,6 +195,43 @@ export const FacultyDirectoryPage: React.FC = () => {
             </div>
           )}
         </div>
+
+        {/* Faculty Portal Banner */}
+        {role === 'FACULTY' ? (
+          <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-800 shrink-0">
+                <GraduationCap className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-emerald-950">
+                  Signed in as Faculty Member ({user?.name || 'Faculty Staff'})
+                </div>
+                <div className="text-[11px] text-emerald-700">
+                  Update your real-time cabin presence, office hours, or answer student appointments.
+                </div>
+              </div>
+            </div>
+            <Link
+              to="/faculty/dashboard"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl shadow-2xs transition-colors shrink-0 text-center"
+            >
+              Open Faculty Cabin Portal →
+            </Link>
+          </div>
+        ) : (
+          <div className="bg-white/80 border border-slate-200/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-slate-600">
+            <span className="text-[11px]">
+              Faculty Member? Sign in to set your live cabin status (Available, In Lecture, Meeting).
+            </span>
+            <Link
+              to="/login"
+              className="text-[#0071E3] font-semibold hover:underline shrink-0 text-[11px]"
+            >
+              Faculty Sign In →
+            </Link>
+          </div>
+        )}
 
         {/* Search & Filter Controls */}
         <div className="space-y-3">

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { hashPassword } from '../auth/crypto.js';
+import { logAuditToSupabase } from './supabase.js';
 import {
   SEED_LOCATIONS,
   SEED_EVENTS,
@@ -28,7 +29,7 @@ export function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       salt TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('STUDENT', 'PUBLISHER', 'ADMIN', 'GUEST')),
+      role TEXT NOT NULL CHECK(role IN ('STUDENT', 'PUBLISHER', 'ADMIN', 'FACULTY', 'GUEST')),
       avatar TEXT,
       department TEXT,
       reg_number TEXT,
@@ -36,6 +37,35 @@ export function initDatabase() {
       updated_at TEXT NOT NULL
     );
   `);
+
+  // Migrate existing users table if it does not contain 'FACULTY' in check constraint
+  try {
+    const userTableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get() as any;
+    if (userTableInfo && userTableInfo.sql && !userTableInfo.sql.includes('FACULTY')) {
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE users_temp (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE NOT NULL,
+          password_hash TEXT NOT NULL,
+          salt TEXT NOT NULL,
+          role TEXT NOT NULL CHECK(role IN ('STUDENT', 'PUBLISHER', 'ADMIN', 'FACULTY', 'GUEST')),
+          avatar TEXT,
+          department TEXT,
+          reg_number TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO users_temp SELECT * FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_temp RENAME TO users;
+        PRAGMA foreign_keys = ON;
+      `);
+    }
+  } catch (err) {
+    console.warn('[DB Migration Warning]', err);
+  }
 
   // 2. Auth Sessions table
   db.exec(`
@@ -131,10 +161,28 @@ export function initDatabase() {
       priority TEXT NOT NULL,
       action_url TEXT,
       verified INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'approved',
+      author_role TEXT DEFAULT 'STUDENT',
+      author_id TEXT,
+      author_email TEXT,
+      author_reg_number TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      rejection_reason TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `);
+
+  // Safe incremental migrations for existing databases
+  try { db.exec('ALTER TABLE announcements ADD COLUMN status TEXT NOT NULL DEFAULT "approved";'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN author_role TEXT DEFAULT "STUDENT";'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN author_id TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN author_email TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN author_reg_number TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN reviewed_by TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN reviewed_at TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE announcements ADD COLUMN rejection_reason TEXT;'); } catch (_) {}
 
   // 7. Faculty Directory table
   db.exec(`
@@ -209,10 +257,12 @@ function seedIfEmpty() {
 
     // Standard demo passwords:
     // admin@vitbhopal.ac.in -> Admin@123
+    // faculty@vitbhopal.ac.in -> Faculty@123
     // student@vitbhopal.ac.in -> Student@123
     // aiclub@vitbhopal.ac.in -> Publisher@123
     const passwords: Record<string, string> = {
       'admin@vitbhopal.ac.in': 'Admin@123',
+      'faculty@vitbhopal.ac.in': 'Faculty@123',
       'student@vitbhopal.ac.in': 'Student@123',
       'aiclub@vitbhopal.ac.in': 'Publisher@123',
     };
@@ -231,6 +281,35 @@ function seedIfEmpty() {
         u.avatar || null,
         u.department || null,
         u.regNumber || null,
+        now,
+        now
+      );
+    }
+  } else {
+    // Ensure faculty users exist in existing database
+    const facultyDemos = [
+      { id: 'user-faculty', name: 'Dr. Ramesh Kumar', email: 'faculty@vitbhopal.ac.in', dept: 'School of Computing Science & Engineering', reg: 'FAC-SCSE-314' },
+      { id: 'user-faculty-ananya', name: 'Dr. Ananya Sharma', email: 'ananya.sharma@vitbhopal.ac.in', dept: 'School of Computing Science & Engineering', reg: 'FAC-SCSE-308' },
+      { id: 'user-faculty-vikram', name: 'Dr. Vikram Aditya', email: 'vikram.aditya@vitbhopal.ac.in', dept: 'School of Computing Science & Engineering', reg: 'FAC-SCSE-322' },
+      { id: 'user-faculty-priya', name: 'Dr. Priya Nair', email: 'priya.nair@vitbhopal.ac.in', dept: 'School of Computing Science & Engineering', reg: 'FAC-SCSE-412' },
+    ];
+    const { hash, salt } = hashPassword('Faculty@123');
+    const now = new Date().toISOString();
+    const insertFacUser = db.prepare(`
+      INSERT OR IGNORE INTO users (id, name, email, password_hash, salt, role, avatar, department, reg_number, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const f of facultyDemos) {
+      insertFacUser.run(
+        f.id,
+        f.name,
+        f.email,
+        hash,
+        salt,
+        'FACULTY',
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+        f.dept,
+        f.reg,
         now,
         now
       );
@@ -339,30 +418,39 @@ function seedIfEmpty() {
   // Seed Announcements
   const annCountStmt = db.prepare('SELECT COUNT(*) as count FROM announcements');
   const annCount = Number(annCountStmt.get().count);
-  if (annCount === 0) {
-    console.log('[DB] Seeding campus announcements...');
-    const insertAnn = db.prepare(`
-      INSERT INTO announcements (id, title, description, publisher_id, publisher_name, location_id, location_name, category, priority, action_url, verified, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const now = new Date().toISOString();
-    for (const a of SEED_ANNOUNCEMENTS) {
-      insertAnn.run(
-        a.id,
-        a.title,
-        a.description,
-        a.publisherId,
-        a.publisherName,
-        a.locationId || null,
-        a.locationName || null,
-        a.category,
-        a.priority,
-        a.actionUrl || null,
-        a.verified ? 1 : 0,
-        a.createdAt || now,
-        now
-      );
-    }
+  const insertAnn = db.prepare(`
+    INSERT OR IGNORE INTO announcements (
+      id, title, description, publisher_id, publisher_name, location_id, location_name,
+      category, priority, action_url, verified, status, author_role, author_id,
+      author_email, author_reg_number, reviewed_by, reviewed_at, rejection_reason,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const now = new Date().toISOString();
+  for (const a of SEED_ANNOUNCEMENTS) {
+    insertAnn.run(
+      a.id,
+      a.title,
+      a.description,
+      a.publisherId,
+      a.publisherName,
+      a.locationId || null,
+      a.locationName || null,
+      a.category,
+      a.priority,
+      a.actionUrl || null,
+      a.verified ? 1 : 0,
+      a.status || (a.verified ? 'approved' : 'pending'),
+      a.authorRole || 'STUDENT',
+      a.authorId || null,
+      a.authorEmail || null,
+      a.authorRegNumber || null,
+      a.reviewedBy || null,
+      a.reviewedAt || null,
+      a.rejectionReason || null,
+      a.createdAt || now,
+      now
+    );
   }
 
   // Seed Faculty
@@ -433,6 +521,18 @@ export function logAudit(
       ipAddress || null,
       now
     );
+    logAuditToSupabase({
+      id,
+      user_id: userId,
+      user_email: userEmail,
+      user_role: userRole,
+      action,
+      resource_type: resourceType,
+      resource_id: resourceId,
+      details,
+      ip_address: ipAddress,
+      created_at: now,
+    });
   } catch (err) {
     console.error('[Audit Log Error]', err);
   }

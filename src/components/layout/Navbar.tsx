@@ -32,6 +32,7 @@ export const Navbar: React.FC = () => {
     { label: 'Faculty & Cabins', path: '/faculty' },
     { label: 'Navigation', path: '/navigation' },
     { label: 'Events', path: '/events' },
+    { label: 'Announcements', path: '/announcements' },
   ];
 
   const handleRoleChange = (newRole: UserRole) => {
@@ -39,6 +40,7 @@ export const Navbar: React.FC = () => {
     setIsRoleMenuOpen(false);
     if (newRole === 'ADMIN') navigate('/admin');
     else if (newRole === 'PUBLISHER') navigate('/publisher');
+    else if (newRole === 'FACULTY') navigate('/faculty/dashboard');
     else if (newRole === 'STUDENT') navigate('/dashboard');
     else navigate('/explore');
   };
@@ -124,7 +126,7 @@ export const Navbar: React.FC = () => {
                   <div className="px-2.5 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider">
                     Role
                   </div>
-                  {(['STUDENT', 'PUBLISHER', 'ADMIN', 'GUEST'] as UserRole[]).map((r) => (
+                  {(['STUDENT', 'FACULTY', 'PUBLISHER', 'ADMIN', 'GUEST'] as UserRole[]).map((r) => (
                     <button
                       key={r}
                       onClick={() => handleRoleChange(r)}
@@ -170,7 +172,16 @@ export const Navbar: React.FC = () => {
                           onClick={() => setIsUserMenuOpen(false)}
                           className="block px-3 py-1.5 rounded-xl hover:bg-black/[0.04] text-[#1D1D1F]"
                         >
-                          Dashboard
+                          Student Dashboard
+                        </Link>
+                      )}
+                      {role === 'FACULTY' && (
+                        <Link
+                          to="/faculty/dashboard"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="block px-3 py-1.5 rounded-xl hover:bg-[#0071E3]/10 text-[#0071E3] font-semibold"
+                        >
+                          Faculty Cabin Portal
                         </Link>
                       )}
                       {role === 'PUBLISHER' && (
@@ -191,6 +202,13 @@ export const Navbar: React.FC = () => {
                           Admin Console
                         </Link>
                       )}
+                      <Link
+                        to="/announcements"
+                        onClick={() => setIsUserMenuOpen(false)}
+                        className="block px-3 py-1.5 rounded-xl hover:bg-black/[0.04] text-[#1D1D1F]"
+                      >
+                        Campus Announcements
+                      </Link>
                       <Link
                         to="/saved"
                         onClick={() => setIsUserMenuOpen(false)}

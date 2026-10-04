@@ -152,11 +152,25 @@ export const api = {
     return request<Announcement[]>('/api/announcements');
   },
 
-  async saveAnnouncement(announcement: Announcement): Promise<{ success: boolean; id: string }> {
-    return request<{ success: boolean; id: string }>('/api/announcements', {
+  async saveAnnouncement(announcement: Partial<Announcement>): Promise<{ success: boolean; id: string; status?: string; verified?: boolean }> {
+    return request<{ success: boolean; id: string; status?: string; verified?: boolean }>('/api/announcements', {
       method: 'POST',
       body: JSON.stringify(announcement),
     });
+  },
+
+  async verifyAnnouncement(
+    id: string,
+    approvalStatus: 'approved' | 'rejected',
+    rejectionReason?: string
+  ): Promise<{ success: boolean; id: string; status: string; verified: boolean; reviewedBy: string; reviewedAt: string; rejectionReason?: string }> {
+    return request<{ success: boolean; id: string; status: string; verified: boolean; reviewedBy: string; reviewedAt: string; rejectionReason?: string }>(
+      `/api/announcements/${id}/verify`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ approvalStatus, rejectionReason }),
+      }
+    );
   },
 
   async deleteAnnouncement(id: string): Promise<{ success: boolean }> {

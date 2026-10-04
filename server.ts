@@ -6,6 +6,19 @@ import { hashPassword, verifyPassword, generateToken } from './server/auth/crypt
 import { authMiddleware, requireAuth, requireRole } from './server/auth/middleware.js';
 import { realtimeHub } from './server/realtime/sse.js';
 import {
+  syncLocationToSupabase,
+  deleteLocationFromSupabase,
+  syncEventToSupabase,
+  deleteEventFromSupabase,
+  syncAnnouncementToSupabase,
+  deleteAnnouncementFromSupabase,
+  syncFacultyToSupabase,
+  deleteFacultyFromSupabase,
+  syncPublisherToSupabase,
+  syncSavedItemToSupabase,
+  deleteSavedItemFromSupabase,
+} from './server/db/supabase.js';
+import {
   SEED_LOCATIONS,
   SEED_EVENTS,
   SEED_ANNOUNCEMENTS,
@@ -67,7 +80,13 @@ async function startServer() {
       const now = new Date().toISOString();
       const id = `user-${Date.now()}`;
       const name = cleanEmail.split('@')[0].toUpperCase();
-      const assignedRole = role || (cleanEmail.includes('admin') ? 'ADMIN' : cleanEmail.includes('club') ? 'PUBLISHER' : 'STUDENT');
+      const assignedRole = role || (cleanEmail.includes('admin')
+        ? 'ADMIN'
+        : cleanEmail.includes('faculty') || cleanEmail.includes('prof') || cleanEmail.includes('dr.')
+        ? 'FACULTY'
+        : cleanEmail.includes('club')
+        ? 'PUBLISHER'
+        : 'STUDENT');
       const { hash, salt } = hashPassword(password || 'Campus@123');
 
       db.prepare(`
@@ -111,13 +130,14 @@ async function startServer() {
 
   app.post('/api/auth/quick-switch', (req, res) => {
     const { targetRole } = req.body;
-    if (!['STUDENT', 'PUBLISHER', 'ADMIN'].includes(targetRole)) {
+    if (!['STUDENT', 'PUBLISHER', 'ADMIN', 'FACULTY'].includes(targetRole)) {
       return res.status(400).json({ error: 'Invalid role' });
     }
 
     let userEmail = 'student@vitbhopal.ac.in';
     if (targetRole === 'ADMIN') userEmail = 'admin@vitbhopal.ac.in';
     else if (targetRole === 'PUBLISHER') userEmail = 'aiclub@vitbhopal.ac.in';
+    else if (targetRole === 'FACULTY') userEmail = 'faculty@vitbhopal.ac.in';
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get(userEmail) as any;
     if (!user) {
@@ -267,6 +287,7 @@ async function startServer() {
     }
 
     logAudit(req.user!.id, req.user!.email, req.user!.role, 'SAVE_LOCATION', 'LOCATION', id, { name: l.name });
+    syncLocationToSupabase({ ...l, id });
     realtimeHub.broadcast('LOCATION_CHANGED', { locationId: id });
     res.json({ success: true, id });
   });
@@ -391,6 +412,7 @@ async function startServer() {
       );
 
       logAudit(req.user!.id, req.user!.email, req.user!.role, 'UPDATE_EVENT', 'EVENT', id, { title: e.title });
+      syncEventToSupabase({ ...existing, ...e, id, version: nextVersion });
       realtimeHub.broadcast('EVENT_UPDATED', { id, title: e.title });
       return res.json({ success: true, id, version: nextVersion });
     } else {
@@ -429,6 +451,7 @@ async function startServer() {
       );
 
       logAudit(req.user!.id, req.user!.email, req.user!.role, 'CREATE_EVENT', 'EVENT', id, { title: e.title });
+      syncEventToSupabase({ ...e, id, version: 1, created_by: req.user!.id, publisher_id: e.publisherId || req.user!.id });
       realtimeHub.broadcast('EVENT_CREATED', { id, title: e.title });
       return res.json({ success: true, id, version: 1 });
     }
@@ -446,6 +469,7 @@ async function startServer() {
 
     db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
     db.prepare('DELETE FROM saved_items WHERE item_type = "EVENT" AND item_id = ?').run(req.params.id);
+    deleteEventFromSupabase(req.params.id);
 
     logAudit(req.user!.id, req.user!.email, req.user!.role, 'DELETE_EVENT', 'EVENT', req.params.id, { title: existing.title });
     realtimeHub.broadcast('EVENT_DELETED', { id: req.params.id, title: existing.title });
@@ -464,6 +488,10 @@ async function startServer() {
       now,
       req.params.id
     );
+    const existingEvt = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id) as any;
+    if (existingEvt) {
+      syncEventToSupabase(existingEvt);
+    }
 
     logAudit(req.user!.id, req.user!.email, req.user!.role, 'UPDATE_EVENT_STATUS', 'EVENT', req.params.id, { approvalStatus });
     realtimeHub.broadcast('EVENT_UPDATED', { id: req.params.id });
@@ -471,10 +499,29 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------
-  // ANNOUNCEMENTS API
+  // ANNOUNCEMENTS API (STUDENT SUBMISSION + ADMIN VERIFICATION)
   // -------------------------------------------------------------
   app.get('/api/announcements', (req, res) => {
-    const rows = db.prepare('SELECT * FROM announcements ORDER BY created_at DESC').all() as any[];
+    let rows: any[];
+    if (req.user && req.user.role === 'ADMIN') {
+      // Admins see everything including pending review items
+      rows = db.prepare('SELECT * FROM announcements ORDER BY created_at DESC').all() as any[];
+    } else if (req.user) {
+      // Authenticated students/publishers see approved items + their own submissions (pending/rejected)
+      rows = db.prepare(`
+        SELECT * FROM announcements
+        WHERE status = 'approved' OR author_id = ? OR publisher_id = ?
+        ORDER BY created_at DESC
+      `).all(req.user.id, req.user.id) as any[];
+    } else {
+      // Public & guests see only approved and verified bulletins
+      rows = db.prepare(`
+        SELECT * FROM announcements
+        WHERE status = 'approved' AND verified = 1
+        ORDER BY created_at DESC
+      `).all() as any[];
+    }
+
     const announcements = rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -487,12 +534,20 @@ async function startServer() {
       priority: r.priority,
       actionUrl: r.action_url || undefined,
       verified: Boolean(r.verified),
+      status: r.status || (r.verified ? 'approved' : 'pending'),
+      authorRole: r.author_role || undefined,
+      authorId: r.author_id || undefined,
+      authorEmail: r.author_email || undefined,
+      authorRegNumber: r.author_reg_number || undefined,
+      reviewedBy: r.reviewed_by || undefined,
+      reviewedAt: r.reviewed_at || undefined,
+      rejectionReason: r.rejection_reason || undefined,
       createdAt: r.created_at,
     }));
     res.json(announcements);
   });
 
-  app.post('/api/announcements', requireRole(['ADMIN', 'PUBLISHER']), (req, res) => {
+  app.post('/api/announcements', requireRole(['ADMIN', 'PUBLISHER', 'STUDENT', 'FACULTY']), (req, res) => {
     const a = req.body;
     if (!a.title || !a.description) {
       return res.status(400).json({ error: 'Missing title or description' });
@@ -500,59 +555,204 @@ async function startServer() {
 
     const id = a.id || `ann-${Date.now()}`;
     const now = new Date().toISOString();
+    const userRole = req.user!.role;
 
-    const existing = db.prepare('SELECT id FROM announcements WHERE id = ?').get(id);
+    // Determination of verification and approval status:
+    // Students always enter 'pending' review; Admins and Faculty are verified;
+    // Publishers depend on whether publisher is already verified
+    let status = 'pending';
+    let verified = 0;
+    let reviewedBy: string | null = null;
+    let reviewedAt: string | null = null;
+
+    if (userRole === 'ADMIN' || userRole === 'FACULTY') {
+      status = 'approved';
+      verified = 1;
+      reviewedBy = req.user!.name;
+      reviewedAt = now;
+    } else if (userRole === 'PUBLISHER') {
+      const pub = db.prepare('SELECT verified FROM publishers WHERE user_id = ? OR id = ?').get(req.user!.id, a.publisherId || req.user!.id) as any;
+      if (pub && pub.verified) {
+        status = 'approved';
+        verified = 1;
+      }
+    } else if (userRole === 'STUDENT') {
+      // Strictly enforce pending verification for students
+      status = 'pending';
+      verified = 0;
+    }
+
+    const authorRole = a.authorRole || userRole;
+    const authorId = req.user!.id;
+    const authorEmail = req.user!.email;
+    const authorRegNumber = a.authorRegNumber || req.user!.regNumber || null;
+    const publisherName = a.publisherName || req.user!.name;
+    const publisherId = a.publisherId || req.user!.id;
+
+    const existing = db.prepare('SELECT * FROM announcements WHERE id = ?').get(id) as any;
     if (existing) {
+      // Permission check on edits
+      if (userRole !== 'ADMIN' && existing.author_id !== req.user!.id && existing.publisher_id !== req.user!.id) {
+        return res.status(403).json({ error: 'Forbidden: You do not have permission to modify this announcement' });
+      }
+
+      // If student edits after rejection or while pending, reset to pending
+      const editStatus = userRole === 'ADMIN' ? (a.status || existing.status) : 'pending';
+      const editVerified = userRole === 'ADMIN' ? (a.verified ? 1 : 0) : 0;
+
       db.prepare(`
         UPDATE announcements SET
           title = ?, description = ?, publisher_id = ?, publisher_name = ?,
           location_id = ?, location_name = ?, category = ?, priority = ?,
-          action_url = ?, verified = ?, updated_at = ?
+          action_url = ?, verified = ?, status = ?, author_role = ?,
+          author_id = ?, author_email = ?, author_reg_number = ?,
+          rejection_reason = ?, updated_at = ?
         WHERE id = ?
       `).run(
         a.title,
         a.description,
-        a.publisherId || req.user!.id,
-        a.publisherName || req.user!.name,
+        publisherId,
+        publisherName,
         a.locationId || null,
         a.locationName || null,
-        a.category || 'Academic',
+        a.category || 'General',
         a.priority || 'medium',
         a.actionUrl || null,
-        req.user!.role === 'ADMIN' || a.verified ? 1 : 0,
+        editVerified,
+        editStatus,
+        authorRole,
+        existing.author_id || authorId,
+        existing.author_email || authorEmail,
+        authorRegNumber,
+        userRole === 'STUDENT' ? null : (a.rejectionReason || null),
         now,
         id
       );
+
+      logAudit(req.user!.id, req.user!.email, req.user!.role, 'UPDATE_ANNOUNCEMENT', 'ANNOUNCEMENT', id, { title: a.title, status: editStatus });
+      syncAnnouncementToSupabase({ ...existing, ...a, id, status: editStatus, verified: editVerified === 1 });
+      realtimeHub.broadcast('ANNOUNCEMENT_CHANGED', { id, title: a.title, status: editStatus });
+      return res.json({ success: true, id, status: editStatus, verified: editVerified === 1 });
     } else {
       db.prepare(`
-        INSERT INTO announcements (id, title, description, publisher_id, publisher_name, location_id, location_name, category, priority, action_url, verified, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO announcements (
+          id, title, description, publisher_id, publisher_name, location_id, location_name,
+          category, priority, action_url, verified, status, author_role, author_id,
+          author_email, author_reg_number, reviewed_by, reviewed_at, rejection_reason,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         a.title,
         a.description,
-        a.publisherId || req.user!.id,
-        a.publisherName || req.user!.name,
+        publisherId,
+        publisherName,
         a.locationId || null,
         a.locationName || null,
-        a.category || 'Academic',
+        a.category || (userRole === 'STUDENT' ? 'Student Initiative' : 'Campus Notice'),
         a.priority || 'medium',
         a.actionUrl || null,
-        req.user!.role === 'ADMIN' || a.verified ? 1 : 0,
+        verified,
+        status,
+        authorRole,
+        authorId,
+        authorEmail,
+        authorRegNumber,
+        reviewedBy,
+        reviewedAt,
+        null,
         now,
         now
       );
-    }
 
-    logAudit(req.user!.id, req.user!.email, req.user!.role, 'SAVE_ANNOUNCEMENT', 'ANNOUNCEMENT', id, { title: a.title });
-    realtimeHub.broadcast('ANNOUNCEMENT_CHANGED', { id, title: a.title });
-    res.json({ success: true, id });
+      const actionName = userRole === 'STUDENT' ? 'SUBMIT_STUDENT_ANNOUNCEMENT' : 'CREATE_ANNOUNCEMENT';
+      logAudit(req.user!.id, req.user!.email, req.user!.role, actionName, 'ANNOUNCEMENT', id, { title: a.title, status });
+      syncAnnouncementToSupabase({
+        ...a,
+        id,
+        status,
+        verified: verified === 1,
+        author_id: authorId,
+        author_role: authorRole,
+        author_email: authorEmail,
+        author_reg_number: authorRegNumber,
+      });
+      realtimeHub.broadcast('ANNOUNCEMENT_CHANGED', { id, title: a.title, status, authorRole });
+      return res.json({ success: true, id, status, verified: verified === 1 });
+    }
   });
 
-  app.delete('/api/announcements/:id', requireRole(['ADMIN', 'PUBLISHER']), (req, res) => {
+  app.patch('/api/announcements/:id/verify', requireRole(['ADMIN']), (req, res) => {
+    const { approvalStatus, rejectionReason } = req.body;
+    if (!['approved', 'rejected'].includes(approvalStatus)) {
+      return res.status(400).json({ error: 'Invalid approval status. Must be approved or rejected.' });
+    }
+
+    const existing = db.prepare('SELECT * FROM announcements WHERE id = ?').get(req.params.id) as any;
+    if (!existing) {
+      return res.status(404).json({ error: 'Announcement not found' });
+    }
+
+    const now = new Date().toISOString();
+    const verified = approvalStatus === 'approved' ? 1 : 0;
+    const finalReason = approvalStatus === 'rejected' ? (rejectionReason || 'Does not meet campus publication guidelines') : null;
+
+    db.prepare(`
+      UPDATE announcements SET
+        status = ?, verified = ?, reviewed_by = ?, reviewed_at = ?, rejection_reason = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      approvalStatus,
+      verified,
+      req.user!.name,
+      now,
+      finalReason,
+      now,
+      req.params.id
+    );
+
+    const updated = db.prepare('SELECT * FROM announcements WHERE id = ?').get(req.params.id) as any;
+    syncAnnouncementToSupabase(updated);
+
+    const auditAction = approvalStatus === 'approved' ? 'VERIFY_ANNOUNCEMENT' : 'REJECT_ANNOUNCEMENT';
+    logAudit(req.user!.id, req.user!.email, req.user!.role, auditAction, 'ANNOUNCEMENT', req.params.id, {
+      title: existing.title,
+      status: approvalStatus,
+      rejectionReason: finalReason,
+    });
+
+    realtimeHub.broadcast('ANNOUNCEMENT_CHANGED', {
+      id: req.params.id,
+      title: existing.title,
+      status: approvalStatus,
+      verified: Boolean(verified),
+    });
+
+    res.json({
+      success: true,
+      id: req.params.id,
+      status: approvalStatus,
+      verified: Boolean(verified),
+      reviewedBy: req.user!.name,
+      reviewedAt: now,
+      rejectionReason: finalReason,
+    });
+  });
+
+  app.delete('/api/announcements/:id', requireRole(['ADMIN', 'PUBLISHER', 'STUDENT']), (req, res) => {
+    const existing = db.prepare('SELECT * FROM announcements WHERE id = ?').get(req.params.id) as any;
+    if (!existing) {
+      return res.status(404).json({ error: 'Announcement not found' });
+    }
+
+    if (req.user!.role !== 'ADMIN' && existing.author_id !== req.user!.id && existing.publisher_id !== req.user!.id) {
+      return res.status(403).json({ error: 'Forbidden: You do not own this announcement' });
+    }
+
     db.prepare('DELETE FROM announcements WHERE id = ?').run(req.params.id);
-    logAudit(req.user!.id, req.user!.email, req.user!.role, 'DELETE_ANNOUNCEMENT', 'ANNOUNCEMENT', req.params.id, {});
-    realtimeHub.broadcast('ANNOUNCEMENT_CHANGED', { id: req.params.id });
+    deleteAnnouncementFromSupabase(req.params.id);
+    logAudit(req.user!.id, req.user!.email, req.user!.role, 'DELETE_ANNOUNCEMENT', 'ANNOUNCEMENT', req.params.id, { title: existing.title });
+    realtimeHub.broadcast('ANNOUNCEMENT_CHANGED', { id: req.params.id, deleted: true });
     res.json({ success: true });
   });
 
@@ -586,7 +786,7 @@ async function startServer() {
     res.json(faculty);
   });
 
-  app.post('/api/faculty', requireRole(['ADMIN']), (req, res) => {
+  app.post('/api/faculty', requireRole(['ADMIN', 'FACULTY']), (req, res) => {
     const f = req.body;
     if (!f.name || !f.cabinNumber || !f.buildingId) {
       return res.status(400).json({ error: 'Missing required faculty fields' });
@@ -595,7 +795,10 @@ async function startServer() {
     const id = f.id || `fac-${Date.now()}`;
     const now = new Date().toISOString();
 
-    const existing = db.prepare('SELECT id FROM faculty WHERE id = ?').get(id);
+    const existing = db.prepare('SELECT * FROM faculty WHERE id = ?').get(id) as any;
+    if (req.user!.role === 'FACULTY' && !existing) {
+      return res.status(403).json({ error: 'Faculty cannot create new faculty records' });
+    }
     if (existing) {
       db.prepare(`
         UPDATE faculty SET
@@ -663,21 +866,27 @@ async function startServer() {
     }
 
     logAudit(req.user!.id, req.user!.email, req.user!.role, 'SAVE_FACULTY', 'FACULTY', id, { name: f.name, cabin: f.cabinNumber });
+    syncFacultyToSupabase({ ...f, id });
     realtimeHub.broadcast('FACULTY_CHANGED', { id, name: f.name });
     res.json({ success: true, id });
   });
 
   app.delete('/api/faculty/:id', requireRole(['ADMIN']), (req, res) => {
     db.prepare('DELETE FROM faculty WHERE id = ?').run(req.params.id);
+    deleteFacultyFromSupabase(req.params.id);
     logAudit(req.user!.id, req.user!.email, req.user!.role, 'DELETE_FACULTY', 'FACULTY', req.params.id, {});
     realtimeHub.broadcast('FACULTY_CHANGED', { id: req.params.id });
     res.json({ success: true });
   });
 
-  app.patch('/api/faculty/:id/status', requireRole(['ADMIN']), (req, res) => {
+  app.patch('/api/faculty/:id/status', requireRole(['ADMIN', 'FACULTY']), (req, res) => {
     const { status } = req.body;
     const now = new Date().toISOString();
     db.prepare('UPDATE faculty SET status = ?, updated_at = ? WHERE id = ?').run(status, now, req.params.id);
+    const existingFac = db.prepare('SELECT * FROM faculty WHERE id = ?').get(req.params.id) as any;
+    if (existingFac) {
+      syncFacultyToSupabase(existingFac);
+    }
     logAudit(req.user!.id, req.user!.email, req.user!.role, 'UPDATE_FACULTY_STATUS', 'FACULTY', req.params.id, { status });
     realtimeHub.broadcast('FACULTY_CHANGED', { id: req.params.id, status });
     res.json({ success: true });
@@ -754,6 +963,7 @@ async function startServer() {
       now,
       req.params.id
     );
+    syncPublisherToSupabase({ ...pub, verified: Boolean(newVerified), verified_at: verifiedAt });
 
     // Sync verification to events
     db.prepare('UPDATE events SET verified = ? WHERE publisher_id = ?').run(newVerified, req.params.id);
@@ -789,6 +999,7 @@ async function startServer() {
         req.user!.id,
         eventId
       );
+      deleteSavedItemFromSupabase(req.user!.id, 'EVENT', eventId);
       res.json({ saved: false });
     } else {
       const id = `saved-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -799,6 +1010,7 @@ async function startServer() {
         eventId,
         now
       );
+      syncSavedItemToSupabase(req.user!.id, 'EVENT', eventId);
       res.json({ saved: true });
     }
   });
@@ -822,6 +1034,7 @@ async function startServer() {
         req.user!.id,
         locationId
       );
+      deleteSavedItemFromSupabase(req.user!.id, 'LOCATION', locationId);
       res.json({ saved: false });
     } else {
       const id = `saved-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -832,6 +1045,7 @@ async function startServer() {
         locationId,
         now
       );
+      syncSavedItemToSupabase(req.user!.id, 'LOCATION', locationId);
       res.json({ saved: true });
     }
   });

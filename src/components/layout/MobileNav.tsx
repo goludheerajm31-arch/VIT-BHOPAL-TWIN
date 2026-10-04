@@ -16,6 +16,7 @@ export const MobileNav: React.FC = () => {
     if (!user) return '/login';
     if (role === 'ADMIN') return '/admin';
     if (role === 'PUBLISHER') return '/publisher';
+    if (role === 'FACULTY') return '/faculty/dashboard';
     return '/dashboard';
   };
 
@@ -64,7 +65,7 @@ export const MobileNav: React.FC = () => {
       <Link
         to={getProfilePath()}
         className={`flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl text-[10px] transition-colors ${
-          isActive('/dashboard') || isActive('/publisher') || isActive('/admin') || isActive('/login')
+          isActive('/dashboard') || isActive('/publisher') || isActive('/admin') || isActive('/faculty/dashboard') || isActive('/login')
             ? 'text-[#0071E3] font-semibold'
             : 'text-[#86868B]'
         }`}

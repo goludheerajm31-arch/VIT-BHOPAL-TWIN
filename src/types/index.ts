@@ -1,4 +1,4 @@
-export type UserRole = 'GUEST' | 'STUDENT' | 'PUBLISHER' | 'ADMIN';
+export type UserRole = 'GUEST' | 'STUDENT' | 'FACULTY' | 'PUBLISHER' | 'ADMIN';
 
 export interface User {
   id: string;
@@ -8,18 +8,22 @@ export interface User {
   avatar?: string;
   department?: string;
   regNumber?: string;
+  facultyId?: string;
+  cabinNumber?: string;
 }
 
 export interface Publisher {
   id: string;
-  userId: string;
+  userId?: string;
   organizationName: string;
-  category: 'Club' | 'Department' | 'Administrative' | 'Sports' | 'Cultural';
+  name?: string;
+  category: 'Club' | 'Department' | 'Administrative' | 'Sports' | 'Cultural' | string;
   description: string;
   logoUrl?: string;
   verified: boolean;
   contactEmail: string;
   verifiedAt?: string;
+  department?: string;
 }
 
 export type LocationCategory =
@@ -86,6 +90,7 @@ export interface CampusEvent {
 }
 
 export type AnnouncementPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type AnnouncementStatus = 'pending' | 'approved' | 'rejected';
 
 export interface Announcement {
   id: string;
@@ -100,6 +105,14 @@ export interface Announcement {
   createdAt: string;
   verified: boolean;
   actionUrl?: string;
+  status?: AnnouncementStatus;
+  authorRole?: string;
+  authorId?: string;
+  authorEmail?: string;
+  authorRegNumber?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
 }
 
 export interface SavedEvent {

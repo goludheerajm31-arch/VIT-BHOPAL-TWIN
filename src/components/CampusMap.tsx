@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import L from 'leaflet';
 import { useNavigate } from 'react-router-dom';
 import { Location, CampusEvent, NavigationPath } from '../types';
-import { storage } from '../services/storage';
+import { storage, DATA_CHANGE_EVENT } from '../services/storage';
 import { getCampusRoute, calculateHaversineDistance } from '../services/navigation';
 import {
   Search,
@@ -312,16 +312,26 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 }) => {
   const navigate = useNavigate();
 
+  const [realtimeEpoch, setRealtimeEpoch] = useState<number>(0);
+
+  useEffect(() => {
+    const onDataChanged = () => {
+      setRealtimeEpoch((prev) => prev + 1);
+    };
+    window.addEventListener(DATA_CHANGE_EVENT, onDataChanged);
+    return () => window.removeEventListener(DATA_CHANGE_EVENT, onDataChanged);
+  }, []);
+
   // Fallback to local storage if locations/events are not passed
   const allLocations: Location[] = useMemo(() => {
     if (propLocations && propLocations.length > 0) return propLocations;
     return storage.getLocations();
-  }, [propLocations]);
+  }, [propLocations, realtimeEpoch]);
 
   const allEvents: CampusEvent[] = useMemo(() => {
     if (propEvents && propEvents.length > 0) return propEvents;
     return storage.getEvents();
-  }, [propEvents]);
+  }, [propEvents, realtimeEpoch]);
 
   // DOM and Leaflet Map references
   const mapContainerRef = useRef<HTMLDivElement>(null);

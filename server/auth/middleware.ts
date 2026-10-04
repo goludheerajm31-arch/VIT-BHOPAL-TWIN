@@ -5,7 +5,7 @@ export interface AuthenticatedUser {
   id: string;
   name: string;
   email: string;
-  role: 'STUDENT' | 'PUBLISHER' | 'ADMIN' | 'GUEST';
+  role: 'STUDENT' | 'PUBLISHER' | 'ADMIN' | 'FACULTY' | 'GUEST';
   avatar?: string;
   department?: string;
   regNumber?: string;
@@ -56,11 +56,12 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   // Resilient fallback for demo and fast-switched roles
   if (!req.user) {
     const roleHeader = (req.headers['x-campus-role'] || req.headers['x-client-role']) as string;
-    if (roleHeader && ['ADMIN', 'PUBLISHER', 'STUDENT'].includes(roleHeader)) {
+    if (roleHeader && ['ADMIN', 'PUBLISHER', 'STUDENT', 'FACULTY'].includes(roleHeader)) {
       try {
         let userEmail = 'student@vitbhopal.ac.in';
         if (roleHeader === 'ADMIN') userEmail = 'admin@vitbhopal.ac.in';
         else if (roleHeader === 'PUBLISHER') userEmail = 'aiclub@vitbhopal.ac.in';
+        else if (roleHeader === 'FACULTY') userEmail = 'faculty@vitbhopal.ac.in';
 
         const u = db.prepare('SELECT id, name, email, role, avatar, department, reg_number FROM users WHERE email = ?').get(userEmail) as any;
         if (u) {
