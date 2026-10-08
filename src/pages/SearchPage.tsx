@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { storage, DATA_CHANGE_EVENT } from '../services/storage';
 import { CampusLocation, CampusEvent, Announcement, FacultyMember } from '../types';
 import { VerifiedBadge } from '../components/common/VerifiedBadge';
+import { formatISTDate } from '../lib/dateUtils';
 import {
   Search,
   MapPin,
@@ -338,7 +339,7 @@ export const SearchPage: React.FC = () => {
 
                           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                             <span className="font-semibold text-blue-600">
-                              Today · {event.startTime}
+                              {formatISTDate(event.date)} · {event.startTime}
                             </span>
                             <span>📍 {event.locationName}</span>
                             <span>Organizer: {event.organizer}</span>

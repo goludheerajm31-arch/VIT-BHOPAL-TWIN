@@ -6,6 +6,7 @@ import { getCampusRoute } from '../services/navigation';
 import { CampusMap } from '../components/CampusMap';
 import { RoutePlanner } from '../components/navigation/RoutePlanner';
 import { VerifiedBadge } from '../components/common/VerifiedBadge';
+import { EventPoster } from '../components/events/EventPoster';
 import { useAuth } from '../services/auth';
 import { useToast } from '../components/layout/Toast';
 import {
@@ -226,10 +227,10 @@ export const ExplorePage: React.FC = () => {
               </span>
             </button>
 
-            {/* Live Feed Status */}
-            <div className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200/60 shrink-0">
-              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-tight">Live Campus</span>
+            {/* Compass Orientation Indicator */}
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-black/[0.06] text-[#86868B] text-[11px] font-medium shrink-0">
+              <Compass className="w-3.5 h-3.5 text-[#0071E3]" />
+              <span>VITB Grid</span>
             </div>
 
             {/* + New Event Button */}
@@ -393,6 +394,15 @@ export const ExplorePage: React.FC = () => {
                   >
                     <X className="w-4 h-4" />
                   </button>
+                </div>
+
+                <div className="rounded-2xl overflow-hidden h-36 border border-slate-200/80 bg-slate-950">
+                  <EventPoster
+                    coverImage={selectedEvent.coverImage}
+                    title={selectedEvent.title}
+                    category={selectedEvent.category}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
                 <div>

@@ -1,4 +1,4 @@
-import { CampusLocation, CampusEvent, Announcement, Publisher, User, FacultyMember } from '../../types';
+import { CampusLocation, CampusEvent, Announcement, Publisher, User, FacultyMember, CampusGuide, FacultyApplication, StudentRecord, PublisherApplication, UserRoleRecord } from '../../types';
 
 // VIT Bhopal Campus reference center: ~ 23.0765° N, 76.8525° E (Kothri Kalan, Sehore/Bhopal highway)
 export const SEED_LOCATIONS: CampusLocation[] = [
@@ -214,49 +214,84 @@ export const SEED_LOCATIONS: CampusLocation[] = [
   },
 ];
 
+// Stable RFC4122 v4 UUID identifiers for development mock users (compatible with future auth.users.id)
+export const MOCK_USER_IDS = {
+  ADMIN: '11111111-1111-4111-8111-111111111111',
+  FACULTY_RAMESH: '22222222-2222-4222-8222-222222222222',
+  FACULTY_ANANYA: '33333333-3333-4333-8333-333333333333',
+  FACULTY_VIKRAM: '44444444-4444-4444-8444-444444444444',
+  FACULTY_PRIYA: '55555555-5555-4555-8555-555555555555',
+  STUDENT_AARAV: '66666666-6666-4666-8666-666666666666',
+  PUBLISHER_AI_CLUB: '77777777-7777-4777-8777-777777777777',
+  PUBLISHER_INNOVATION: '88888888-8888-4888-8888-888888888888',
+  PUBLISHER_CODING: '99999999-9999-4999-8999-999999999999',
+  PUBLISHER_CULTURAL: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+} as const;
+
 export const SEED_PUBLISHERS: Publisher[] = [
   {
     id: 'pub-ai-club',
-    userId: 'user-publisher',
+    userId: MOCK_USER_IDS.PUBLISHER_AI_CLUB,
     organizationName: 'AI & ML Club',
+    name: 'AI & ML Club',
     category: 'Club',
     description: 'Official student chapter fostering machine learning research, Kaggle hackathons, and industry mentorship.',
     verified: true,
     contactEmail: 'aiclub@vitbhopal.ac.in',
     verifiedAt: '2026-08-15',
+    status: 'ACTIVE',
     logoUrl: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'pub-innovation-club',
-    userId: 'user-pub-2',
+    userId: MOCK_USER_IDS.PUBLISHER_INNOVATION,
     organizationName: 'Innovation & Entrepreneurship Cell',
+    name: 'Innovation & Entrepreneurship Cell',
     category: 'Club',
     description: 'Nurturing student startup ventures, intellectual property filings, and annual university hackathons.',
     verified: true,
     contactEmail: 'e-cell@vitbhopal.ac.in',
     verifiedAt: '2026-08-20',
+    status: 'ACTIVE',
     logoUrl: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'pub-coding-club',
-    userId: 'user-pub-3',
+    userId: MOCK_USER_IDS.PUBLISHER_CODING,
     organizationName: 'Developer Student Society',
+    name: 'Developer Student Society',
     category: 'Club',
     description: 'Community for full-stack developers, competitive coders, open-source contributors, and dev conferences.',
     verified: true,
     contactEmail: 'devsociety@vitbhopal.ac.in',
     verifiedAt: '2026-08-25',
+    status: 'ACTIVE',
     logoUrl: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'pub-cultural-club',
-    userId: 'user-pub-4',
+    userId: MOCK_USER_IDS.PUBLISHER_CULTURAL,
     organizationName: 'Cultural & Performing Arts Guild',
+    name: 'Cultural & Performing Arts Guild',
     category: 'Cultural',
     description: 'Organizers of university annual fest Advitya, acoustic nights, drama productions, and dance troupes.',
-    verified: false, // Pending verification in demo! Admin can verify!
+    verified: false,
     contactEmail: 'culturalguild@vitbhopal.ac.in',
+    status: 'ACTIVE',
     logoUrl: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=150&auto=format&fit=crop&q=80',
+  },
+  {
+    id: 'pub-gdsc-chapter',
+    userId: null,
+    auth_user_id: null,
+    organizationName: 'Google Developer Groups on Campus',
+    name: 'Google Developer Groups on Campus',
+    category: 'Club',
+    description: 'Official student developers chapter authorized by Dean Academics and Student Welfare.',
+    verified: true,
+    contactEmail: 'gdg@vitbhopal.ac.in',
+    status: 'PROVISIONED',
+    notes: 'Pre-provisioned by Admin Office. Awaiting faculty coordinator / lead account login.',
   },
 ];
 
@@ -271,9 +306,9 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-ab-1',
     locationName: 'VITB Academic Block 1',
     venueDetail: 'Seminar Hall (AB-1 Ground Floor, Wing B)',
-    date: '2026-09-04', // Today's date in current local time
-    startTime: '4:00 PM',
-    endTime: '6:00 PM',
+    date: '2026-10-07', // Today in IST
+    startTime: '04:00 PM',
+    endTime: '11:59 PM',
     category: 'Workshops',
     verified: true,
     status: 'upcoming',
@@ -293,9 +328,9 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-ab-1',
     locationName: 'VITB Academic Block 1',
     venueDetail: 'Auditorium Hall, AB-1 Wing A',
-    date: '2026-09-04', // Today
-    startTime: '6:30 PM',
-    endTime: '8:30 PM',
+    date: '2026-10-08', // Tomorrow
+    startTime: '06:30 PM',
+    endTime: '08:30 PM',
     category: 'Technical',
     verified: true,
     status: 'upcoming',
@@ -314,7 +349,7 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-ab-1',
     locationName: 'VITB Academic Block 1',
     venueDetail: 'Advanced Computing Lab (Lab 301-304), AB-1 3rd Floor',
-    date: '2026-09-05',
+    date: '2026-10-09',
     startTime: '10:00 AM',
     endTime: '01:00 PM',
     category: 'Workshops',
@@ -335,7 +370,7 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-ab-2',
     locationName: 'VITB Academic Block 2',
     venueDetail: 'Robotics & Prototyping Workshop Bay, AB-2 Ground Floor',
-    date: '2026-09-06',
+    date: '2026-10-10',
     startTime: '03:00 PM',
     endTime: '05:30 PM',
     category: 'Technical',
@@ -356,7 +391,7 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-ab-1',
     locationName: 'VITB Academic Block 1',
     venueDetail: 'Rooms 204-208, 2nd Floor, AB-1',
-    date: '2026-09-07',
+    date: '2026-10-11',
     startTime: '05:00 PM',
     endTime: '07:30 PM',
     category: 'Technical',
@@ -377,11 +412,11 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-mph',
     locationName: 'Multi-purpose Hall',
     venueDetail: 'MPH Indoor Stage & Arena',
-    date: '2026-09-08',
+    date: '2026-10-12',
     startTime: '04:30 PM',
     endTime: '08:00 PM',
     category: 'Cultural',
-    verified: false, // Pending verification in demo!
+    verified: false,
     status: 'upcoming',
     approvalStatus: 'approved',
     coverImage: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800&auto=format&fit=crop&q=80',
@@ -398,7 +433,7 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-ab-2',
     locationName: 'VITB Academic Block 2',
     venueDetail: 'Executive Seminar Hall 102, AB-2',
-    date: '2026-09-09',
+    date: '2026-10-14',
     startTime: '03:30 PM',
     endTime: '05:30 PM',
     category: 'Clubs',
@@ -419,7 +454,7 @@ export const SEED_EVENTS: CampusEvent[] = [
     locationId: 'loc-mph',
     locationName: 'Multi-purpose Hall',
     venueDetail: 'MPH Sports Pavilion & Conference Room',
-    date: '2026-09-10',
+    date: '2026-10-15',
     startTime: '05:00 PM',
     endTime: '06:30 PM',
     category: 'Sports',
@@ -429,6 +464,27 @@ export const SEED_EVENTS: CampusEvent[] = [
     coverImage: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=800&auto=format&fit=crop&q=80',
     capacity: 80,
     tags: ['Sports', 'Football', 'Cricket', 'Tournament'],
+  },
+  {
+    id: 'event-completed-sample',
+    title: 'VIT Bhopal Welcome Orientation (Concluded)',
+    subtitle: 'Campus Induction for Freshers',
+    description: 'Annual freshers orientation and campus digital twin walkthrough.',
+    organizer: 'Student Welfare Office',
+    publisherId: 'pub-campus-admin',
+    locationId: 'loc-ab-1',
+    locationName: 'VITB Academic Block 1',
+    venueDetail: 'Auditorium Hall, AB-1 Wing A',
+    date: '2026-10-01', // Past event
+    startTime: '10:00 AM',
+    endTime: '12:00 PM',
+    category: 'Orientation',
+    verified: true,
+    status: 'completed',
+    approvalStatus: 'approved',
+    coverImage: 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=800&auto=format&fit=crop&q=80',
+    capacity: 1000,
+    tags: ['Freshers', 'Induction', 'Campus'],
   },
 ];
 
@@ -533,7 +589,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
     id: 'ann-student-study-group',
     title: 'Peer Study Circle: Advanced Data Structures & LeetCode Sprint',
     description: 'Forming a dedicated 5-member peer study circle to practice graph traversal, tree dynamic programming, and mock technical interviews ahead of summer internship placements. We will meet twice a week at the AB-1 Library reading room.',
-    publisherId: 'user-student',
+    publisherId: MOCK_USER_IDS.STUDENT_AARAV,
     publisherName: 'Aarav Patel',
     locationId: 'loc-ab-1',
     locationName: 'AB-1 (Central Library)',
@@ -543,7 +599,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
     verified: false,
     status: 'pending',
     authorRole: 'STUDENT',
-    authorId: 'user-student',
+    authorId: MOCK_USER_IDS.STUDENT_AARAV,
     authorEmail: 'student@vitbhopal.ac.in',
     authorRegNumber: '24BCE10482',
     actionUrl: 'https://chat.whatsapp.com/sample-study-circle',
@@ -552,7 +608,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
     id: 'ann-student-lost-calc',
     title: 'Lost Casio fx-991CW Scientific Calculator in AB-2 Room 104',
     description: 'Left a black Casio fx-991CW calculator with a yellow sticker on the back desk of AB-2 Room 104 after the afternoon physics lecture. If found, please return or hand it over to the floor security marshal.',
-    publisherId: 'user-student',
+    publisherId: MOCK_USER_IDS.STUDENT_AARAV,
     publisherName: 'Aarav Patel',
     locationId: 'loc-ab-2',
     locationName: 'AB-2 (Academic Block 2)',
@@ -562,7 +618,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
     verified: true,
     status: 'approved',
     authorRole: 'STUDENT',
-    authorId: 'user-student',
+    authorId: MOCK_USER_IDS.STUDENT_AARAV,
     authorEmail: 'student@vitbhopal.ac.in',
     authorRegNumber: '24BCE10482',
     reviewedBy: 'Dr. Rajesh Sharma',
@@ -572,7 +628,7 @@ export const SEED_ANNOUNCEMENTS: Announcement[] = [
 
 export const SEED_USERS: User[] = [
   {
-    id: 'user-admin',
+    id: MOCK_USER_IDS.ADMIN,
     name: 'Dr. Rajesh Sharma',
     email: 'admin@vitbhopal.ac.in',
     role: 'ADMIN',
@@ -580,7 +636,7 @@ export const SEED_USERS: User[] = [
     department: 'Office of the Dean & IT Governance',
   },
   {
-    id: 'user-faculty',
+    id: MOCK_USER_IDS.FACULTY_RAMESH,
     name: 'Dr. Ramesh Kumar',
     email: 'faculty@vitbhopal.ac.in',
     role: 'FACULTY',
@@ -591,7 +647,7 @@ export const SEED_USERS: User[] = [
     cabinNumber: 'AB1-314',
   },
   {
-    id: 'user-faculty-ananya',
+    id: MOCK_USER_IDS.FACULTY_ANANYA,
     name: 'Dr. Ananya Sharma',
     email: 'ananya.sharma@vitbhopal.ac.in',
     role: 'FACULTY',
@@ -602,7 +658,7 @@ export const SEED_USERS: User[] = [
     cabinNumber: 'AB1-308',
   },
   {
-    id: 'user-faculty-vikram',
+    id: MOCK_USER_IDS.FACULTY_VIKRAM,
     name: 'Dr. Vikram Aditya',
     email: 'vikram.aditya@vitbhopal.ac.in',
     role: 'FACULTY',
@@ -613,7 +669,7 @@ export const SEED_USERS: User[] = [
     cabinNumber: 'AB1-322',
   },
   {
-    id: 'user-faculty-priya',
+    id: MOCK_USER_IDS.FACULTY_PRIYA,
     name: 'Dr. Priya Nair',
     email: 'priya.nair@vitbhopal.ac.in',
     role: 'FACULTY',
@@ -624,7 +680,7 @@ export const SEED_USERS: User[] = [
     cabinNumber: 'AB1-412',
   },
   {
-    id: 'user-student',
+    id: MOCK_USER_IDS.STUDENT_AARAV,
     name: 'Aarav Patel',
     email: 'student@vitbhopal.ac.in',
     role: 'STUDENT',
@@ -633,12 +689,35 @@ export const SEED_USERS: User[] = [
     regNumber: '24BCE10482',
   },
   {
-    id: 'user-publisher',
+    id: MOCK_USER_IDS.PUBLISHER_AI_CLUB,
     name: 'Ananya Sharma (AI & ML Club Lead)',
     email: 'aiclub@vitbhopal.ac.in',
     role: 'PUBLISHER',
     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120&auto=format&fit=crop&q=80',
     department: 'AI & Robotics Core',
+  },
+];
+
+export const SEED_STUDENTS: StudentRecord[] = [
+  {
+    id: '00000000-0000-4000-8000-000000000006',
+    auth_user_id: MOCK_USER_IDS.STUDENT_AARAV,
+    authUserId: MOCK_USER_IDS.STUDENT_AARAV,
+    registration_number: '24BCE10482',
+    registrationNumber: '24BCE10482',
+    institutional_email: 'student@vitbhopal.ac.in',
+    institutionalEmail: 'student@vitbhopal.ac.in',
+    full_name: 'Aarav Patel',
+    fullName: 'Aarav Patel',
+    program: 'B.Tech',
+    branch: 'Computer Science & Engineering',
+    department: 'School of Computing Science and Engineering',
+    semester: 4,
+    status: 'ACTIVE',
+    created_at: '2026-08-01T08:00:00Z',
+    createdAt: '2026-08-01T08:00:00Z',
+    updated_at: '2026-08-01T08:00:00Z',
+    updatedAt: '2026-08-01T08:00:00Z',
   },
 ];
 
@@ -662,7 +741,10 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Cloud Computing', 'Distributed Systems', 'Advanced Computer Architecture'],
     researchArea: 'Cloud Orchestration, Fog Computing & Distributed Consensus',
     directionsGuide: 'Enter AB-1 main foyer, take the North elevator or central stairs to the 3rd Floor. Walk right into Wing B corridor. Cabin AB1-314 is the 4th door on your left.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Computing Science & Engineering',
+    authUserId: MOCK_USER_IDS.FACULTY_RAMESH,
     avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -684,7 +766,10 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Deep Learning', 'Computer Vision', 'Artificial Intelligence'],
     researchArea: 'Generative AI, Medical Image Diagnostics & Vision Transformers',
     directionsGuide: 'Take the elevator to the 3rd Floor and turn left into Wing A. Cabin AB1-308 is located directly opposite the AI Innovation Lab entrance.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Computing Science & Engineering',
+    authUserId: MOCK_USER_IDS.FACULTY_ANANYA,
     avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -706,7 +791,10 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Operating Systems', 'Linux Kernel Internals', 'System Programming'],
     researchArea: 'Kernel Scheduling, Low-Latency OS & Containerization',
     directionsGuide: 'Ascend to 3rd Floor Wing B and walk down the main faculty corridor past Cabin 315; Cabin AB1-322 is near the East fire stairwell.',
-    status: 'in_lecture',
+    status: 'ACTIVE',
+    liveStatus: 'in_lecture',
+    department: 'School of Computing Science & Engineering',
+    authUserId: MOCK_USER_IDS.FACULTY_VIKRAM,
     avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -728,7 +816,10 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Natural Language Processing', 'Machine Learning', 'Big Data Engineering'],
     researchArea: 'Large Language Models, Multimodal AI, Multilingual Sentiment Systems',
     directionsGuide: 'Take elevator to the 4th Floor of AB-1, proceed through the glass doors into Wing B. Cabin AB1-412 is the second cabin on your right.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Computing Science & Engineering',
+    authUserId: MOCK_USER_IDS.FACULTY_PRIYA,
     avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -750,7 +841,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Network Security', 'Cryptography', 'Ethical Hacking & Cyber Defense'],
     researchArea: 'Zero Trust Security, Cryptographic Protocols, Malware Reverse Engineering',
     directionsGuide: 'Proceed to 3rd Floor Wing A. Turn immediately left after entering the corridor; Cabin AB1-302 is beside the faculty lounge.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Computing Science & Engineering',
     avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -772,7 +865,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['VLSI Circuit Design', 'Digital Electronics', 'Semiconductor Devices'],
     researchArea: 'Low-Power VLSI, FinFET Architectures, ASIC Design',
     directionsGuide: 'Take stairs or elevator to 2nd Floor of AB-2. Enter Wing A corridor; Cabin AB2-208 is situated directly next to the Microelectronics Simulation Lab.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Electrical & Electronics Engineering',
     avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -794,7 +889,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Embedded Systems', 'Digital Signal Processing', 'Wireless Communications'],
     researchArea: 'Edge Computing Hardware, 5G Baseband Processing, DSP Algorithms',
     directionsGuide: 'Head to 2nd Floor Wing B of AB-2. Follow the central hallway until Cabin AB2-215, adjacent to the Digital Signal Processing Lab.',
-    status: 'meeting',
+    status: 'ACTIVE',
+    liveStatus: 'meeting',
+    department: 'School of Electrical & Electronics Engineering',
     avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -816,7 +913,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Applied Thermodynamics', 'Fluid Mechanics', 'Computational Fluid Dynamics (CFD)'],
     researchArea: 'Thermal Energy Storage, Aerodynamic Drag Reduction, Nanofluids',
     directionsGuide: 'First Floor of AB-1, Wing A. Walk past Smart Classroom 104; Cabin AB1-118 is on your right with the HOD SMEC plaque.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Mechanical Engineering',
     avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -838,7 +937,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Robotics Engineering', 'Mechatronics', 'Kinematics & Dynamics of Machinery'],
     researchArea: 'Autonomous Mobile Robots, Robotic Arm Manipulators, Drone Swarms',
     directionsGuide: 'First Floor of AB-1, Wing B corridor, immediately adjacent to the Robotics and CNC Prototyping Bay.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Mechanical Engineering',
     avatarUrl: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -860,7 +961,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Linear Algebra', 'Discrete Mathematics', 'Calculus for Engineers'],
     researchArea: 'Algebraic Graph Theory, Numerical Optimization, Cryptographic Math',
     directionsGuide: 'Ground Floor main lobby, turn into Wing A hallway. Cabin AB1-G12 is the 3rd door on your left from the entrance.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'School of Advanced Sciences & Languages',
     avatarUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -882,7 +985,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Engineering Physics', 'Quantum Computing Foundations', 'Electromagnetic Theory'],
     researchArea: 'Quantum Dots, Optoelectronic Sensors, Condensed Matter Physics',
     directionsGuide: 'Ground Floor Wing B, follow the signs toward the General Physics Laboratory; Cabin AB1-G18 is located on the right.',
-    status: 'in_lecture',
+    status: 'ACTIVE',
+    liveStatus: 'in_lecture',
+    department: 'School of Advanced Sciences & Languages',
     avatarUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -904,7 +1009,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Strategic Management', 'Corporate Finance', 'Entrepreneurship'],
     researchArea: 'Venture Capital Networks, Corporate Governance, Market Analytics',
     directionsGuide: 'Enter AB-2, take elevator to the 3rd Floor. Proceed into the Management Studies Corridor. Cabin AB2-304 is marked Dean VSB.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'VIT Business School',
     avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -926,7 +1033,9 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Business Analytics', 'Fintech Innovations', 'Marketing Metrics'],
     researchArea: 'Predictive Consumer Modeling, Digital Banking Frameworks',
     directionsGuide: 'Third Floor of AB-2, East Corridor past the Business Analytics Lab. Cabin AB2-308 is on the left.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'VIT Business School',
     avatarUrl: 'https://images.unsplash.com/photo-1573496799652-408c2ac9fe98?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -948,7 +1057,414 @@ export const SEED_FACULTY: FacultyMember[] = [
     subjects: ['Corporate Readiness', 'Technical Interview Prep', 'Industry Relations'],
     researchArea: 'Campus Hiring Trends, Talent Acquisition, University-Industry Alliances',
     directionsGuide: 'Ground Floor main atrium of AB-1. Head directly right toward the Centre for Industrial Relations. Cabin AB1-G05 is the Director Office at the front of the wing.',
-    status: 'available',
+    status: 'ACTIVE',
+    liveStatus: 'available',
+    department: 'Centre for Industrial Relations & Placements',
     avatarUrl: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=120&auto=format&fit=crop&q=80',
+  },
+  {
+    id: 'fac-scse-prov-01',
+    name: 'Dr. Rahul Sharma',
+    prefix: 'Dr.',
+    designation: 'Assistant Professor',
+    school: 'SCSE',
+    department: 'School of Computing Science & Engineering',
+    departmentName: 'School of Computing Science & Engineering',
+    cabinNumber: 'AB1-205',
+    buildingId: 'loc-ab-1',
+    buildingName: 'VITB Academic Block 1',
+    floor: '2nd Floor',
+    wing: 'Wing A',
+    roomDetails: 'Cabin 205, IoT & Edge Computing Research Suite',
+    email: 'rahul.sharma@vitbhopal.ac.in',
+    phone: '+91 7560 254530',
+    consultationHours: 'Tue & Thu: 02:00 PM – 04:00 PM',
+    subjects: ['Internet of Things', 'Sensor Networks', 'Edge AI'],
+    researchArea: 'Edge Intelligence, Wireless Sensor Networks & Smart Campus',
+    directionsGuide: 'Take the elevator to 2nd Floor of AB-1, proceed into Wing A corridor. Cabin AB1-205 is adjacent to the IoT Research Lab.',
+    status: 'PROVISIONED',
+    liveStatus: 'available',
+    auth_user_id: null,
+    authUserId: null,
+    created_by: MOCK_USER_IDS.ADMIN,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&auto=format&fit=crop&q=80',
+  },
+];
+
+export const SEED_CAMPUS_GUIDES: CampusGuide[] = [
+  {
+    id: 'c0000000-0000-4000-8000-000000000001',
+    title: 'How to Submit a Hostel Complaint',
+    slug: 'how-to-submit-a-hostel-complaint',
+    category: 'HOSTEL',
+    shortDescription: 'Standard operating steps for reporting electrical, plumbing, Wi-Fi, or carpentry issues in university residence halls.',
+    content: 'University hostellers experiencing maintenance, civil, network, or housekeeping issues within their allocated rooms or common areas can log issues through the student ticket desk. Submissions receive a tracked ticket number and are routed directly to the floor warden and facility engineers.',
+    steps: [
+      'Log in to the university student portal using your institutional credentials.',
+      'Navigate to Hostel Services and select the Maintenance & Complaint Desk tab.',
+      'Choose the relevant issue category (Electrical, Plumbing, Furniture, Wi-Fi, or Cleanliness).',
+      'Provide your Block, Floor, and Room number along with a concise description of the maintenance defect.',
+      'Attach clear reference photographs if the issue involves physical room fixtures.',
+      'Submit the ticket and record the generated Token ID for tracking and floor marshal inspection.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'Registered residential students currently residing in on-campus hostel blocks.',
+      requiredInformation: [
+        'Institutional Registration Number',
+        'Assigned Hostel Block and Room Number',
+        'Accurate defect description',
+        'Inspection availability hours'
+      ],
+      importantNotes: 'For emergency electrical faults or water leakages during off-hours, contact your floor warden or the round-the-clock hostel security control desk directly.'
+    },
+    externalLinks: [
+      { label: 'Hostel Maintenance Portal', url: 'https://vitbhopal.ac.in' },
+      { label: 'Hostel Rules & Code of Conduct', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [
+      {
+        id: 'att-hostel-complaint-pdf',
+        guideId: 'c0000000-0000-4000-8000-000000000001',
+        fileName: 'Hostel_Maintenance_SOP.pdf',
+        fileType: 'application/pdf',
+        storagePath: 'guides/Hostel_Maintenance_SOP.pdf',
+        fileSize: 428000,
+        createdAt: '2026-09-15T09:00:00Z',
+        url: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=1200&auto=format&fit=crop&q=80'
+      },
+      {
+        id: 'att-hostel-room-img',
+        guideId: 'c0000000-0000-4000-8000-000000000001',
+        fileName: 'hostel-room-inspection-sample.jpg',
+        fileType: 'image/jpeg',
+        storagePath: 'guides/hostel-room-inspection-sample.jpg',
+        fileSize: 215000,
+        createdAt: '2026-09-15T09:10:00Z',
+        url: 'https://images.unsplash.com/photo-1555854877-bab0e564b8d5?w=800&auto=format&fit=crop&q=80'
+      }
+    ],
+    status: 'PUBLISHED',
+    displayOrder: 1,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-15T10:00:00Z',
+    createdAt: '2026-09-15T08:30:00Z',
+    updatedAt: '2026-10-04T08:00:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000002',
+    title: 'Hosteller → Day Scholar Conversion',
+    slug: 'hosteller-to-day-scholar',
+    category: 'HOSTEL',
+    shortDescription: 'Formal clearance procedure and documentation required to transition from hostel accommodation to day scholar status.',
+    content: 'Students intending to vacate university hostels to commute from home or local guardian residences must complete the formal no-dues clearance and parental consent workflow before the commencement of the subsequent academic semester.',
+    steps: [
+      'Download and complete the official Day Scholar Conversion Consent Form signed by parent or registered guardian.',
+      'Submit the parent affidavit and proof of local residence (Electricity bill / Rent agreement) to the Chief Warden Office.',
+      'Obtain Room Inventory Handover Clearance from the Block Caretaker verifying zero damages.',
+      'Acquire Mess No-Dues Clearance from the residential dining office.',
+      'Submit all signed clearance slips to the Finance & Hostel Accounts counter for mess/room deposit reconciliation.',
+      'Collect the updated Day Scholar Bus & Gate Pass ID card endorsement from Student Services.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'Hostel students moving to family residence or local guardian accommodation within university commuting distance.',
+      requiredInformation: [
+        'Parental Consent Letter & ID Proof',
+        'Local Residence Address Verification',
+        'Hostel Inventory Handover Slip',
+        'Student ID & Registration Number'
+      ],
+      importantNotes: 'Conversion requests are processed exclusively during the designated semester transition window. Mid-semester vacating is subject to Dean approval.'
+    },
+    externalLinks: [
+      { label: 'Hostel Office Guidelines', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [
+      {
+        id: 'att-day-scholar-pdf',
+        guideId: 'c0000000-0000-4000-8000-000000000002',
+        fileName: 'Day_Scholar_Conversion_Checklist.pdf',
+        fileType: 'application/pdf',
+        storagePath: 'guides/Day_Scholar_Conversion_Checklist.pdf',
+        fileSize: 312000,
+        createdAt: '2026-09-20T11:00:00Z',
+        url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=1200&auto=format&fit=crop&q=80'
+      }
+    ],
+    status: 'PUBLISHED',
+    displayOrder: 2,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-20T12:00:00Z',
+    createdAt: '2026-09-20T10:00:00Z',
+    updatedAt: '2026-10-02T14:30:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000003',
+    title: 'Hostel Leave Procedure & Gate Pass',
+    slug: 'hostel-leave-procedure',
+    category: 'HOSTEL',
+    shortDescription: 'Instructions for submitting weekend outing, vacation leave, and emergency gate pass requests.',
+    content: 'Students residing in campus hostels requiring to leave the campus premises for home visits, medical exigencies, or educational competitions must submit digital gate pass requests through the residential portal with parental confirmation.',
+    steps: [
+      'Submit leave application on the portal at least 24 hours prior to departure time.',
+      'Specify departure date/time, expected return date/time, mode of travel, and destination address.',
+      'Ensure parent acknowledges the automated SMS/portal confirmation code.',
+      'Once approved by the Assistant Warden, a digital QR gate pass is generated on your student dashboard.',
+      'Scan the QR pass at the main campus security checkpost upon exit and re-entry.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'All registered hostellers with active biometric campus profiles.',
+      requiredInformation: [
+        'Registered Parent Phone Number for verification',
+        'Valid travel destination address',
+        'Return journey ticket details for extended vacations'
+      ],
+      importantNotes: 'Late returns beyond the registered return time must be informed to the warden in advance to avoid late-entry logging.'
+    },
+    externalLinks: [
+      { label: 'Hostel Leave Portal Desk', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [],
+    status: 'PUBLISHED',
+    displayOrder: 3,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-22T08:00:00Z',
+    createdAt: '2026-09-22T08:00:00Z',
+    updatedAt: '2026-10-01T11:20:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000004',
+    title: 'How to Register Courses & Course Add/Drop',
+    slug: 'course-registration-procedure',
+    category: 'ACADEMICS',
+    shortDescription: 'Step-by-step guidance for semester course enrollment, elective selection, and add/drop windows.',
+    content: 'Course registration is conducted digitally via the academic portal under the Fully Flexible Credit System (FFCS). Students are advised to consult their faculty advisors and verify prerequisite completion prior to their allocated registration slot.',
+    steps: [
+      'Log into the Academic Portal 15 minutes before your scheduled registration window opens.',
+      'Review your degree audit report to verify remaining core, discipline elective, and open elective credits.',
+      'Select course codes and preferred theory/lab slots to avoid timetable clashes.',
+      'Confirm slot selections and click "Save & Submit Enrollment".',
+      'Download and print the generated Course Registration Slip (CRS) for advisor countersignature.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'Undergraduate and postgraduate students registered for the current semester.',
+      requiredInformation: ['No outstanding tuition fees', 'Faculty advisor approval on registration plan']
+    },
+    externalLinks: [
+      { label: 'Academic Curriculum Portal', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [
+      {
+        id: 'att-course-reg-guide',
+        guideId: 'c0000000-0000-4000-8000-000000000004',
+        fileName: 'Course_Registration_Handbook.pdf',
+        fileType: 'application/pdf',
+        storagePath: 'guides/Course_Registration_Handbook.pdf',
+        fileSize: 685000,
+        createdAt: '2026-09-10T10:00:00Z',
+        url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=1200&auto=format&fit=crop&q=80'
+      }
+    ],
+    status: 'PUBLISHED',
+    displayOrder: 4,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-10T11:00:00Z',
+    createdAt: '2026-09-10T09:00:00Z',
+    updatedAt: '2026-09-28T16:00:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000005',
+    title: 'Student ID Card Reissuance & Bonafide Certificate',
+    slug: 'student-bonafide-id-reissuance',
+    category: 'STUDENT_SERVICES',
+    shortDescription: 'How to obtain replacement campus smart cards, bonafide letters for visas, education loans, and bus passes.',
+    content: 'Student Records & Service Center processes applications for replacement RFID campus cards, formal bonafide study certificates, character certificates, and medium of instruction letters.',
+    steps: [
+      'Fill out the digital request form on the Student Services desk.',
+      'Select document type (Bonafide for Bank Loan, Passport/Visa, Bus Pass, or ID Replacement).',
+      'Attach digital fee receipt for replacement ID card if applicable.',
+      'Submit request for automated registrar verification.',
+      'Receive signed digital e-certificate or collect physical RFID card from AB-1 Registrar Counter.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'All enrolled undergraduate and postgraduate students.',
+      requiredInformation: ['Registration number', 'Purpose of certificate', 'FIR copy for lost RFID card']
+    },
+    externalLinks: [
+      { label: 'Student Records Counter', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [],
+    status: 'PUBLISHED',
+    displayOrder: 5,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-08T10:00:00Z',
+    createdAt: '2026-09-08T09:30:00Z',
+    updatedAt: '2026-09-25T12:00:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000006',
+    title: 'Semester Fee Payment, Receipts & Refund Procedure',
+    slug: 'fee-payment-and-scholarships',
+    category: 'FINANCE',
+    shortDescription: 'Information regarding online tuition installment payments, payment gateway troubleshooting, and refund requests.',
+    content: 'University finance counter coordinates online fee receipts, educational loan bank demand drafts, caution deposit refund upon graduation, and national/state scholarship portal document attestations.',
+    steps: [
+      'Visit the online fee payment portal using student login.',
+      'Verify the semester fee breakdown and select net banking, credit card, or NEFT/RTGS challan.',
+      'Upon successful payment transaction, allow up to 2 hours for automated ledger clearance.',
+      'Download and retain the official stamped digital receipt with transaction reference number.',
+      'For educational bank loans, submit the bank sanction letter to AB-1 Finance Counter Room 102.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'All students and parents paying university tuition or mess fees.',
+      importantNotes: 'Avoid double payment if gateway transaction times out. Check bank statement and wait for reconciliation.'
+    },
+    externalLinks: [
+      { label: 'Official University Payment Gateway', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [],
+    status: 'PUBLISHED',
+    displayOrder: 6,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-05T09:00:00Z',
+    createdAt: '2026-09-05T08:00:00Z',
+    updatedAt: '2026-09-30T10:00:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000007',
+    title: 'Academic Grievances & Disciplinary Escalation Contacts',
+    slug: 'grievance-escalation-procedure',
+    category: 'COMPLAINTS',
+    shortDescription: 'Confidential channel for escalating academic discrepancies, ragging concerns, and administrative feedback.',
+    content: 'Students requiring institutional redressal for academic evaluation disputes, campus conduct, or infrastructural issues can submit structured appeals to the university Student Grievance Redressal Committee (SGRC).',
+    steps: [
+      'Identify the level of grievance (Course Instructor → HOD/Program Chair → Dean of School → SGRC Council).',
+      'Draft a factual description detailing course code, semester, faculty member, and specific dispute.',
+      'Attach all relevant assignments, lab records, or attendance logs.',
+      'Submit the formal grievance through the Student Affairs confidential portal.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'Any student seeking fair and confidential dispute resolution.',
+      importantNotes: 'Anti-Ragging complaints can be submitted 24x7 directly to the Dean of Student Welfare with immediate protection.'
+    },
+    externalLinks: [
+      { label: 'Grievance Committee Portal', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [],
+    status: 'PUBLISHED',
+    displayOrder: 7,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    publishedAt: '2026-09-02T10:00:00Z',
+    createdAt: '2026-09-02T09:00:00Z',
+    updatedAt: '2026-09-22T14:00:00Z'
+  },
+  {
+    id: 'c0000000-0000-4000-8000-000000000008',
+    title: 'Campus Placement Registration & Resume Verification',
+    slug: 'placement-portal-requirements',
+    category: 'PLACEMENTS',
+    shortDescription: 'Comprehensive guide for final and pre-final year students registering with the Centre for Industrial Relations (CIR).',
+    content: 'The Centre for Industrial Relations (CIR) coordinates on-campus recruitment, internships, and corporate interviews. Eligible students must ensure profile accuracy and document validation prior to the start of the recruitment season.',
+    steps: [
+      'Register on the Central Placement Portal with university roll number and permanent personal email.',
+      'Enter verified 10th, 12th, and semester-wise CGPA without backlogs.',
+      'Upload single-page ATS-compliant resume verified by faculty placement coordinator.',
+      'Attend mandatory mock technical rounds and soft-skills pre-placement training.'
+    ],
+    additionalInfo: {
+      whoCanUse: 'Students in pre-final and final academic years meeting CIR eligibility criteria.',
+      importantNotes: 'Draft guide currently under review by Placement Directorate.'
+    },
+    externalLinks: [
+      { label: 'CIR Placement Portal', url: 'https://vitbhopal.ac.in' }
+    ],
+    attachments: [],
+    status: 'DRAFT',
+    displayOrder: 8,
+    createdBy: MOCK_USER_IDS.ADMIN,
+    createdAt: '2026-10-01T09:00:00Z',
+    updatedAt: '2026-10-04T07:00:00Z'
+  }
+];
+
+export const SEED_FACULTY_APPLICATIONS: FacultyApplication[] = [
+  {
+    id: 'fapp-00000000-0000-4000-8000-000000000001',
+    email: 'ananya.iyer@vitbhopal.ac.in',
+    name: 'Dr. Ananya Iyer',
+    department: 'School of Computing Science and Engineering',
+    designation: 'Assistant Professor (Senior Grade)',
+    employeeId: 'VITB-FAC-8812',
+    additionalInformation: 'Newly joined faculty for Cloud Computing & AI. Awaiting cabin allocation in AB-1.',
+    status: 'PENDING',
+    createdAt: '2026-10-02T10:00:00Z',
+    updatedAt: '2026-10-02T10:00:00Z',
+  },
+  {
+    id: 'fapp-00000000-0000-4000-8000-000000000002',
+    email: 'rohit.deshmukh@vitbhopal.ac.in',
+    name: 'Dr. Rohit Deshmukh',
+    department: 'School of Mechanical Engineering',
+    designation: 'Associate Professor',
+    employeeId: 'VITB-FAC-7104',
+    additionalInformation: 'Robotics & Automation lab coordinator.',
+    status: 'PENDING',
+    createdAt: '2026-10-03T14:30:00Z',
+    updatedAt: '2026-10-03T14:30:00Z',
+  },
+];
+
+export const SEED_PUBLISHER_APPLICATIONS: PublisherApplication[] = [
+  {
+    id: 'papp-00000000-0000-4000-8000-000000000001',
+    email: 'rohini.sen2024@vitbhopal.ac.in',
+    name: 'Rohini Sen',
+    organization: 'Robotics & Automation Society',
+    reason: 'Lead student coordinator for inter-collegiate autonomous rover competition. Requesting publisher access to post official event dates, team registration timelines, and robotics workshop venues.',
+    additionalInformation: 'Endorsed by Dr. Rohit Deshmukh (Faculty Mentor). Previous year event had 450+ attendees.',
+    status: 'PENDING',
+    createdAt: '2026-10-04T11:00:00Z',
+    updatedAt: '2026-10-04T11:00:00Z',
+  },
+  {
+    id: 'papp-00000000-0000-4000-8000-000000000002',
+    email: 'kavita.nair2024@vitbhopal.ac.in',
+    name: 'Kavita Nair',
+    organization: 'Debate & Literary Society',
+    reason: 'Hosting parliamentary debate tournaments and open-mic campus literary sessions in Academic Block 1 auditorium.',
+    additionalInformation: 'Official student chapter registered under Office of Student Welfare.',
+    status: 'APPROVED',
+    reviewedBy: 'Dr. Rajesh Sharma',
+    reviewedAt: '2026-10-05T09:30:00Z',
+    createdAt: '2026-10-02T14:15:00Z',
+    updatedAt: '2026-10-05T09:30:00Z',
+  },
+];
+
+export const SEED_USER_ROLES: UserRoleRecord[] = [
+  {
+    id: 'urole-00000000-0000-4000-8000-000000000001',
+    userId: MOCK_USER_IDS.PUBLISHER_AI_CLUB,
+    email: 'aiclub@vitbhopal.ac.in',
+    role: 'PUBLISHER',
+    status: 'ACTIVE',
+    organization: 'AI & ML Club',
+    grantedBy: MOCK_USER_IDS.ADMIN,
+    grantedAt: '2026-08-15T00:00:00Z',
+    createdAt: '2026-08-15T00:00:00Z',
+    updatedAt: '2026-08-15T00:00:00Z',
+  },
+  {
+    id: 'urole-00000000-0000-4000-8000-000000000002',
+    userId: null,
+    email: 'gdg@vitbhopal.ac.in',
+    role: 'PUBLISHER',
+    status: 'PROVISIONED',
+    organization: 'Google Developer Groups on Campus',
+    notes: 'Provisioned by Dean Office. Awaiting first authentication with matching institutional email.',
+    grantedBy: MOCK_USER_IDS.ADMIN,
+    grantedAt: '2026-09-01T10:00:00Z',
+    createdAt: '2026-09-01T10:00:00Z',
+    updatedAt: '2026-09-01T10:00:00Z',
   },
 ];

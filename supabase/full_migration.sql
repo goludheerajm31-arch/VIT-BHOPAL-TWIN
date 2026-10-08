@@ -219,19 +219,20 @@ CREATE INDEX IF NOT EXISTS idx_announcements_publisher_id ON public.announcement
 CREATE INDEX IF NOT EXISTS idx_announcements_priority ON public.announcements(priority);
 
 -- ----------------------------------------------------------------------------
--- 7. Faculty Directory & Cabin Locator (FK to locations)
+-- 7. Faculty Directory & Cabin Locator (Admin-Provisioned Architecture)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.faculty (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   prefix TEXT,
   designation TEXT NOT NULL,
-  school TEXT NOT NULL,
+  school TEXT NOT NULL DEFAULT 'SCSE',
+  department TEXT NOT NULL DEFAULT '',
   department_name TEXT NOT NULL DEFAULT '',
-  cabin_number TEXT NOT NULL,
-  building_id TEXT NOT NULL REFERENCES public.locations(id) ON UPDATE CASCADE ON DELETE RESTRICT,
-  building_name TEXT NOT NULL,
-  floor TEXT NOT NULL,
+  cabin_number TEXT NOT NULL DEFAULT 'AB1-TBD',
+  building_id TEXT NOT NULL REFERENCES public.locations(id) ON UPDATE CASCADE ON DELETE RESTRICT DEFAULT 'loc-ab-1',
+  building_name TEXT NOT NULL DEFAULT 'VITB Academic Block 1',
+  floor TEXT NOT NULL DEFAULT 'Ground Floor',
   wing TEXT,
   room_details TEXT,
   email TEXT NOT NULL,
@@ -240,7 +241,10 @@ CREATE TABLE IF NOT EXISTS public.faculty (
   subjects JSONB NOT NULL DEFAULT '[]'::jsonb,
   research_area TEXT,
   directions_guide TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'in_lecture', 'meeting', 'busy', 'on_leave')),
+  status TEXT NOT NULL DEFAULT 'PROVISIONED' CHECK (status IN ('PROVISIONED', 'ACTIVE', 'DISABLED')),
+  live_status TEXT NOT NULL DEFAULT 'available' CHECK (live_status IN ('available', 'in_lecture', 'meeting', 'busy', 'on_leave')),
+  auth_user_id UUID,
+  created_by UUID,
   avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -250,10 +254,17 @@ CREATE TRIGGER trigger_faculty_updated_at
   BEFORE UPDATE ON public.faculty
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+-- Enforce database-level uniqueness on normalized (lowercase, trimmed) email
+CREATE UNIQUE INDEX IF NOT EXISTS idx_faculty_unique_normalized_email ON public.faculty (LOWER(TRIM(email)));
+
+-- Enforce uniqueness on authenticated user identity when claimed
+CREATE UNIQUE INDEX IF NOT EXISTS idx_faculty_unique_auth_user_id ON public.faculty (auth_user_id) WHERE auth_user_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_faculty_building_id ON public.faculty(building_id);
 CREATE INDEX IF NOT EXISTS idx_faculty_cabin ON public.faculty(cabin_number);
 CREATE INDEX IF NOT EXISTS idx_faculty_school ON public.faculty(school);
 CREATE INDEX IF NOT EXISTS idx_faculty_status ON public.faculty(status);
+CREATE INDEX IF NOT EXISTS idx_faculty_live_status ON public.faculty(live_status);
 
 -- ----------------------------------------------------------------------------
 -- 8. Saved Items (Private user bookmarks)

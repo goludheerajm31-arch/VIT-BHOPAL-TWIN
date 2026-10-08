@@ -1,5 +1,28 @@
 export type UserRole = 'GUEST' | 'STUDENT' | 'FACULTY' | 'PUBLISHER' | 'ADMIN';
 
+export type PublisherRoleStatus = 'PROVISIONED' | 'ACTIVE' | 'DISABLED';
+
+export interface StudentRecord {
+  id: string; // UUID primary key
+  auth_user_id?: string | null;
+  authUserId?: string | null;
+  registration_number: string; // e.g. "24BCE10482"
+  registrationNumber: string;
+  institutional_email: string; // Normalized lowercase @vitbhopal.ac.in
+  institutionalEmail: string;
+  full_name: string;
+  fullName: string;
+  program: string; // e.g. "B.Tech"
+  branch: string; // e.g. "Computer Science & Engineering"
+  department?: string | null;
+  semester?: number | null;
+  status: 'ACTIVE' | 'PROVISIONED' | 'GRADUATED' | 'SUSPENDED';
+  created_at?: string;
+  createdAt: string;
+  updated_at?: string;
+  updatedAt: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -10,11 +33,34 @@ export interface User {
   regNumber?: string;
   facultyId?: string;
   cabinNumber?: string;
+  isPublisher?: boolean;
+  isMasterAdmin?: boolean;
+  isDemoAccount?: boolean;
+  auth_user_id?: string | null;
+  publisherId?: string;
+  publisherStatus?: PublisherRoleStatus;
+  roles?: UserRole[];
+}
+
+export interface UserRoleRecord {
+  id: string; // UUID primary key
+  userId?: string | null; // Auth User ID UUID if claimed/linked
+  email: string; // Normalized institutional email
+  role: UserRole;
+  status: PublisherRoleStatus;
+  grantedBy?: string | null;
+  grantedAt?: string | null;
+  revokedAt?: string | null;
+  organization?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Publisher {
   id: string;
-  userId?: string;
+  userId?: string | null;
+  auth_user_id?: string | null;
   organizationName: string;
   name?: string;
   category: 'Club' | 'Department' | 'Administrative' | 'Sports' | 'Cultural' | string;
@@ -24,6 +70,12 @@ export interface Publisher {
   contactEmail: string;
   verifiedAt?: string;
   department?: string;
+  status?: PublisherRoleStatus;
+  notes?: string;
+  grantedBy?: string | null;
+  grantedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type LocationCategory =
@@ -64,7 +116,18 @@ export type EventCategory =
   | 'Cultural'
   | 'Sports'
   | 'Academics'
-  | 'Orientation';
+  | 'Orientation'
+  | 'Competition'
+  | 'Seminar'
+  | 'Other';
+
+export interface EventPosterMetadata {
+  fileName: string;
+  storagePath: string;
+  mimeType: string;
+  fileSize: number;
+  uploadedAt: string;
+}
 
 export interface CampusEvent {
   id: string;
@@ -81,12 +144,16 @@ export interface CampusEvent {
   endTime: string; // e.g. "6:00 PM"
   category: EventCategory;
   verified: boolean;
-  coverImage?: string;
+  coverImage?: string; // Public display URL for poster/cover
+  posterMetadata?: EventPosterMetadata;
+  storagePath?: string; // Supabase Storage relative path (e.g., events/{id}/poster.webp)
   capacity?: number;
   registrationUrl?: string;
-  status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
+  status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled' | 'expired';
   approvalStatus?: 'approved' | 'pending' | 'rejected';
   tags?: string[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type AnnouncementPriority = 'low' | 'medium' | 'high' | 'urgent';
@@ -155,13 +222,36 @@ export interface NavigationPath {
   vehicleMinutes?: number;
 }
 
-export type FacultyStatus = 'available' | 'in_lecture' | 'meeting' | 'busy';
+// Account lifecycle status for admin-provisioned faculty
+export type FacultyAccountStatus = 'PROVISIONED' | 'ACTIVE' | 'DISABLED';
+
+// Live physical presence / cabin status in campus digital twin
+export type FacultyCabinStatus = 'available' | 'in_lecture' | 'meeting' | 'busy';
+
+// Backwards-compatible alias for existing cabin components
+export type FacultyStatus = FacultyCabinStatus;
 
 export interface FacultyMember {
-  id: string;
+  id: string; // UUID primary key
   name: string;
+  email: string; // Canonical normalized institutional email (lowercase)
+  department: string; // Department
+  designation: string; // Academic designation
+  auth_user_id?: string | null; // Linked authenticated identity UUID (NULL when PROVISIONED)
+  authUserId?: string | null; // CamelCase alias
+  status: FacultyAccountStatus; // Lifecycle: PROVISIONED | ACTIVE | DISABLED
+  accountStatus?: FacultyAccountStatus;
+  liveStatus?: FacultyCabinStatus; // Cabin presence: available | in_lecture | meeting | busy
+  cabinStatus?: FacultyCabinStatus;
+  created_by?: string | null; // Admin UUID who provisioned
+  createdBy?: string | null;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+
+  // Digital Twin Physical Location & Academic Directory Mapping
   prefix?: string;
-  designation: string;
   school: string; // e.g. "SCSE", "SEEE", "SMEC", "SASL", "VSB", "CIR"
   departmentName: string;
   cabinNumber: string; // e.g. "AB1-314"
@@ -170,12 +260,125 @@ export interface FacultyMember {
   floor: string; // e.g. "3rd Floor"
   wing?: string; // e.g. "Wing B"
   roomDetails?: string;
-  email: string;
   phone?: string;
   consultationHours: string;
   subjects: string[];
   researchArea?: string;
   directionsGuide: string;
-  status?: FacultyStatus;
   avatarUrl?: string;
+}
+
+// ----------------------------------------------------------------------------
+// Faculty Access Applications (Unprovisioned institutional applicants)
+// ----------------------------------------------------------------------------
+export type FacultyApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface FacultyApplication {
+  id: string; // UUID primary key
+  auth_user_id?: string | null; // Linked authenticated identity UUID if available
+  authUserId?: string | null;
+  email: string; // Canonical normalized institutional email (lowercase)
+  name: string;
+  department: string;
+  designation: string;
+  employee_id?: string | null;
+  employeeId?: string | null;
+  additional_information?: string | null;
+  additionalInformation?: string | null;
+  supporting_document_url?: string | null;
+  supportingDocumentUrl?: string | null;
+  status: FacultyApplicationStatus;
+  reviewed_by?: string | null;
+  reviewedBy?: string | null;
+  reviewed_at?: string | null;
+  reviewedAt?: string | null;
+  rejection_reason?: string | null;
+  rejectionReason?: string | null;
+  created_at?: string;
+  createdAt: string;
+  updated_at?: string;
+  updatedAt: string;
+}
+
+// ----------------------------------------------------------------------------
+// Publisher Access Applications (Student & Community Publisher Requests)
+// ----------------------------------------------------------------------------
+export type PublisherApplicationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface PublisherApplication {
+  id: string; // UUID primary key
+  auth_user_id?: string | null;
+  authUserId?: string | null;
+  email: string; // Canonical normalized institutional email (lowercase)
+  name: string; // Full Name
+  organization?: string | null; // Organization / Club / Department
+  reason: string; // Reason for requesting Publisher access
+  additional_information?: string | null;
+  additionalInformation?: string | null;
+  status: PublisherApplicationStatus;
+  reviewed_by?: string | null;
+  reviewedBy?: string | null;
+  reviewed_at?: string | null;
+  reviewedAt?: string | null;
+  rejection_reason?: string | null;
+  rejectionReason?: string | null;
+  created_at?: string;
+  createdAt: string;
+  updated_at?: string;
+  updatedAt: string;
+}
+
+// ----------------------------------------------------------------------------
+// Campus Hub & Guide Types
+// ----------------------------------------------------------------------------
+export type GuideCategory =
+  | 'ACADEMICS'
+  | 'HOSTEL'
+  | 'STUDENT_SERVICES'
+  | 'ADMINISTRATION'
+  | 'FINANCE'
+  | 'COMPLAINTS'
+  | 'PLACEMENTS'
+  | 'GENERAL';
+
+export type GuideStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+
+export interface GuideExternalLink {
+  label: string;
+  url: string;
+}
+
+export interface GuideAttachment {
+  id: string; // UUID
+  guideId: string; // UUID
+  fileName: string;
+  fileType: string; // e.g. "application/pdf", "image/jpeg", "image/png"
+  storagePath: string;
+  fileSize: number; // in bytes
+  createdAt: string;
+  url?: string;
+}
+
+export interface CampusGuide {
+  id: string; // UUID primary key
+  title: string;
+  slug: string;
+  category: GuideCategory;
+  shortDescription: string;
+  content: string;
+  steps: string[];
+  additionalInfo?: {
+    whoCanUse?: string;
+    requiredInformation?: string[];
+    importantNotes?: string;
+  };
+  externalLinks: GuideExternalLink[];
+  attachments: GuideAttachment[];
+  status: GuideStatus;
+  displayOrder: number;
+  createdBy?: string | null;
+  lastUpdatedBy?: string | null;
+  publishedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

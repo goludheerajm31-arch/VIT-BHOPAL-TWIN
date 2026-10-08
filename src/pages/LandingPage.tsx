@@ -1,38 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { storage, DATA_CHANGE_EVENT } from '../services/storage';
-import { CampusLocation, CampusEvent } from '../types';
+import { CampusLocation, CampusEvent, Announcement } from '../types';
 import { CampusMap } from '../components/CampusMap';
 import { VerifiedBadge } from '../components/common/VerifiedBadge';
+import { EventPoster } from '../components/events/EventPoster';
+import { formatISTDate, getCurrentISTParts } from '../lib/dateUtils';
 import {
   Compass,
   Search,
   Calendar,
   Navigation,
-  ShieldCheck,
-  ArrowRight,
-  Sparkles,
   MapPin,
   Clock,
-  CheckCircle2,
-  Building2,
-  Users,
-  Layers,
-  Flame,
+  ArrowRight,
+  BookOpen,
+  GraduationCap,
+  Bell,
+  ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const [locations, setLocations] = useState<CampusLocation[]>([]);
   const [events, setEvents] = useState<CampusEvent[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<CampusLocation | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const ist = getCurrentISTParts();
 
   const loadData = () => {
     const locs = storage.getLocations();
-    const evts = storage.getEvents();
+    // Use getActiveEvents() to guarantee only non-expired upcoming events are shown
+    const evts = storage.getActiveEvents();
+    const anns = storage.getAnnouncements().filter(
+      (a) => a.status === 'approved' || (a.verified && a.status !== 'rejected')
+    );
+
     setLocations(locs);
     setEvents(evts);
-    // Default preview location: AB-1
+    setAnnouncements(anns);
+
+    // Default landmark for preview
     const defaultLoc = locs.find((l) => l.id === 'loc-ab-1') || locs[0];
     setSelectedLocation(defaultLoc || null);
   };
@@ -43,316 +54,384 @@ export const LandingPage: React.FC = () => {
     return () => window.removeEventListener(DATA_CHANGE_EVENT, loadData);
   }, []);
 
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+    } else {
+      navigate('/search');
+    }
+  };
+
+  const quickShortcuts = [
+    {
+      title: 'Campus Map',
+      description: 'Interactive map & 3D landmarks',
+      path: '/explore',
+      icon: Compass,
+      color: 'text-[#0071E3] bg-[#0071E3]/10',
+    },
+    {
+      title: 'Faculty Cabins',
+      description: 'Room finder & cabin directory',
+      path: '/faculty',
+      icon: GraduationCap,
+      color: 'text-indigo-600 bg-indigo-50',
+    },
+    {
+      title: 'Pedestrian Navigation',
+      description: 'Walking routes & estimated times',
+      path: '/navigation',
+      icon: Navigation,
+      color: 'text-emerald-600 bg-emerald-50',
+    },
+    {
+      title: 'Campus Hub',
+      description: 'Announcements & student guides',
+      path: '/hub',
+      icon: BookOpen,
+      color: 'text-amber-600 bg-amber-50',
+    },
+  ];
+
+  // Up to 3 nearest upcoming events
+  const upcomingEvents = events.slice(0, 3);
+  // Up to 3 recent notices
+  const latestNotices = announcements.slice(0, 3);
+
   return (
-    <div className="space-y-16 pb-16">
-      {/* Hero Section */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10">
-        <div className="text-center max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200/80 text-blue-700 text-xs font-semibold">
-            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-            <span>VIT Bhopal Digital Twin Platform</span>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
+      {/* 1. Header: Date context & Quick Search */}
+      <section className="bg-white rounded-3xl border border-black/[0.06] p-6 sm:p-8 shadow-[0_2px_12px_rgba(0,0,0,0.03)] space-y-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="space-y-1">
+            <div className="text-xs font-semibold uppercase tracking-wider text-[#86868B]">
+              VIT Bhopal University · Today {formatISTDate(ist.dateStr)}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#1D1D1F] tracking-tight">
+              Campus Overview
+            </h1>
+            <p className="text-xs sm:text-sm text-[#86868B] max-w-xl">
+              Access places, faculty locations, real-time events, and walking directions across the campus.
+            </p>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-slate-950 tracking-tight leading-tight">
-            One VIT Bhopal. <br />
-            <span className="text-blue-600">One digital experience.</span>
-          </h1>
-
-          <p className="text-slate-600 text-base sm:text-lg leading-relaxed font-normal max-w-2xl mx-auto">
-            Explore the campus, find places, discover events and navigate with confidence — all through one intelligent digital layer.
-          </p>
-
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              to="/explore"
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
-            >
-              <Compass className="w-4 h-4" />
-              <span>Explore Campus</span>
-            </Link>
-
-            <Link
-              to="/events"
-              className="px-6 py-3 bg-white hover:bg-slate-50 text-slate-800 text-sm font-bold rounded-xl border border-slate-200/90 shadow-xs hover:shadow transition-all flex items-center gap-2"
-            >
-              <Calendar className="w-4 h-4 text-blue-600" />
-              <span>Discover Events</span>
-            </Link>
-          </div>
+          {/* Quick Search Input */}
+          <form onSubmit={handleSearchSubmit} className="w-full md:w-80 sm:max-w-md">
+            <div className="relative">
+              <Search className="w-4 h-4 text-[#86868B] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search building, cabin, or event..."
+                className="w-full pl-9 pr-14 py-2.5 bg-[#F5F5F7] border border-black/[0.08] rounded-2xl text-xs text-[#1D1D1F] focus:outline-none focus:ring-2 focus:ring-[#0071E3] focus:bg-white transition-all font-medium"
+              />
+              <button
+                type="submit"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-white hover:bg-black/[0.04] text-[11px] font-semibold text-[#1D1D1F] border border-black/[0.08] rounded-xl shadow-2xs transition-colors cursor-pointer"
+              >
+                Go
+              </button>
+            </div>
+          </form>
         </div>
 
-        {/* Hero Interactive Visualization Preview */}
-        <div className="mt-12 rounded-2xl border border-slate-200/90 bg-white p-3 sm:p-4 shadow-xl">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Embedded Interactive Map Preview */}
-            <div className="lg:w-3/4 h-[500px] sm:h-[560px] rounded-xl overflow-hidden relative flex flex-col bg-[#E8ECE9]">
-              <CampusMap
-                locations={locations}
-                events={events}
-                selectedLocationId={selectedLocation?.id}
-                onSelectLocation={(loc) => setSelectedLocation(loc)}
-                onStartNavigationTo={(loc) => {
-                  navigate(`/explore?to=${loc.id}&from=loc-ab-1`);
-                }}
-                height="100%"
-                className="w-full h-full flex-1 min-h-0"
-              />
-            </div>
-
-            {/* Quick Interactive Location / Search Sidebar Preview */}
-            <div className="lg:w-1/4 flex flex-col justify-between space-y-4 p-2 sm:p-3 bg-slate-50/70 rounded-xl border border-slate-100">
-              <div className="space-y-3">
-                {/* Search Bar Preview */}
-                <div
-                  onClick={() => navigate('/search')}
-                  className="w-full flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-xl shadow-xs cursor-pointer hover:border-blue-400 transition-colors"
-                >
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Search className="w-4 h-4 text-slate-400" />
-                    <span>Search building, lab, or event...</span>
+        {/* Quick Access Grid */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-2 border-t border-black/[0.04]">
+          {quickShortcuts.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className="p-4 rounded-2xl bg-[#F5F5F7]/70 hover:bg-[#F5F5F7] border border-black/[0.04] hover:border-black/[0.08] transition-all group flex flex-col justify-between space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${item.color}`}>
+                    <Icon className="w-4 h-4" />
                   </div>
-                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                    TRY
-                  </span>
+                  <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-[#1D1D1F] group-hover:translate-x-0.5 transition-all" />
+                </div>
+                <div>
+                  <div className="font-semibold text-xs sm:text-sm text-[#1D1D1F] tracking-tight">
+                    {item.title}
+                  </div>
+                  <div className="text-[11px] text-[#86868B] line-clamp-1 mt-0.5">
+                    {item.description}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 2. Urgent Notices / Current Information */}
+      {latestNotices.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-amber-600" />
+              <h2 className="text-sm font-bold uppercase tracking-wider text-[#1D1D1F]">
+                Active Notices & Bulletins
+              </h2>
+            </div>
+            <Link
+              to="/hub"
+              className="text-xs font-semibold text-[#0071E3] hover:underline flex items-center gap-1"
+            >
+              <span>View All</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {latestNotices.map((ann) => (
+              <div
+                key={ann.id}
+                className="p-4 rounded-2xl bg-white border border-black/[0.06] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:border-black/[0.1] transition-all flex flex-col justify-between space-y-2"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-[#86868B]">
+                    <span className="font-semibold text-slate-700">
+                      {ann.publisherName}
+                    </span>
+                    <span>{ann.category}</span>
+                  </div>
+                  <h3 className="font-bold text-xs sm:text-sm text-[#1D1D1F] line-clamp-2">
+                    {ann.title}
+                  </h3>
+                  <p className="text-xs text-[#86868B] line-clamp-2 leading-relaxed">
+                    {ann.description}
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-black/[0.04] flex items-center justify-between text-[11px] text-[#86868B]">
+                  <span>{new Date(ann.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                  {ann.actionUrl && (
+                    <a
+                      href={ann.actionUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#0071E3] font-medium hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>Link</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 3. Upcoming Campus Events */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-[#86868B]">
+              Campus Activities
+            </div>
+            <h2 className="text-lg sm:text-xl font-bold text-[#1D1D1F] tracking-tight">
+              Upcoming Events
+            </h2>
+          </div>
+          <Link
+            to="/events"
+            className="text-xs font-semibold text-[#0071E3] hover:underline flex items-center gap-1"
+          >
+            <span>All Events ({events.length})</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {upcomingEvents.length === 0 ? (
+          <div className="p-8 text-center bg-white rounded-3xl border border-black/[0.06] text-xs text-[#86868B]">
+            No upcoming events scheduled right now. Check back soon or browse previous bulletins in the Campus Hub.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {upcomingEvents.map((event) => (
+              <div
+                key={event.id}
+                className="bg-white rounded-3xl border border-black/[0.06] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:border-black/[0.12] transition-all overflow-hidden flex flex-col justify-between group"
+              >
+                {/* Poster / Thumbnail */}
+                <div className="relative aspect-16/9 overflow-hidden bg-slate-950">
+                  <EventPoster
+                    coverImage={event.coverImage}
+                    title={event.title}
+                    category={event.category}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute top-3 left-3 z-10">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-xs">
+                      {event.category}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Selected Location Card Preview */}
-                {selectedLocation && (
-                  <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-xs space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md">
-                        {selectedLocation.category}
-                      </span>
-                      <span className="text-xs text-slate-400 font-medium">
-                        {selectedLocation.floor}
-                      </span>
+                {/* Event Details */}
+                <div className="p-4 sm:p-5 flex-1 flex flex-col justify-between space-y-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs text-[#86868B]">
+                      <span className="truncate">{event.organizer}</span>
+                      {event.verified && <VerifiedBadge size="sm" />}
                     </div>
 
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 leading-snug">
-                        {selectedLocation.name}
+                    <Link to={`/events/${event.id}`}>
+                      <h3 className="font-bold text-sm text-[#1D1D1F] group-hover:text-[#0071E3] transition-colors line-clamp-2">
+                        {event.title}
                       </h3>
-                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                        {selectedLocation.description}
-                      </p>
+                    </Link>
+
+                    <p className="text-xs text-[#86868B] line-clamp-2 leading-relaxed">
+                      {event.description}
+                    </p>
+                  </div>
+
+                  <div className="pt-3 border-t border-black/[0.04] space-y-2.5 text-xs text-[#86868B]">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="flex items-center gap-1 font-medium text-[#1D1D1F]">
+                        <Calendar className="w-3.5 h-3.5 text-[#0071E3]" />
+                        {formatISTDate(event.date)}
+                      </span>
+                      <span className="flex items-center gap-1 font-medium text-[#1D1D1F]">
+                        <Clock className="w-3.5 h-3.5 text-[#0071E3]" />
+                        {event.startTime}
+                      </span>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>{selectedLocation.building}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <span>{selectedLocation.openingHours}</span>
-                      </div>
+                    <div className="flex items-center gap-1.5 text-[11px] truncate">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span className="truncate text-slate-700">{event.locationName}</span>
                     </div>
 
-                    <div className="pt-2 flex items-center gap-2">
-                      <Link
-                        to={`/locations/${selectedLocation.id}`}
-                        className="flex-1 py-1.5 px-3 text-center text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200/80 rounded-lg transition-colors"
-                      >
-                        View Details
-                      </Link>
+                    <div className="flex items-center gap-2 pt-1">
                       <button
                         onClick={() =>
-                          navigate(`/explore?to=${selectedLocation.id}&from=loc-ab-1`)
+                          navigate(
+                            `/explore?to=${event.locationId}&from=loc-ab-1&navigate=true`
+                          )
                         }
-                        className="flex-1 py-1.5 px-3 text-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        className="flex-1 py-1.5 px-2.5 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-xs font-semibold shadow-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
                       >
                         <Navigation className="w-3.5 h-3.5" />
                         <span>Directions</span>
                       </button>
+
+                      <Link
+                        to={`/events/${event.id}`}
+                        className="py-1.5 px-3 bg-[#F5F5F7] hover:bg-black/[0.07] text-[#1D1D1F] rounded-xl text-xs font-semibold text-center transition-colors"
+                      >
+                        Details
+                      </Link>
                     </div>
                   </div>
-                )}
-
-                {/* Live Campus Notice Teaser */}
-                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs space-y-1">
-                  <div className="flex items-center justify-between text-amber-800 font-bold text-[11px]">
-                    <span className="flex items-center gap-1">
-                      <Flame className="w-3.5 h-3.5 text-amber-600" /> Featured Event Today
-                    </span>
-                    <VerifiedBadge size="sm" showText={false} />
-                  </div>
-                  <div className="font-semibold text-slate-900">AI Club Workshop · 4:00 PM</div>
-                  <div className="text-[11px] text-slate-600">Seminar Hall (AB-1 Ground Floor)</div>
                 </div>
               </div>
-
-              <div className="pt-2 text-center">
-                <Link
-                  to="/explore"
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
-                >
-                  <span>Open Full Interactive Map Canvas</span>
-                  <ArrowRight className="w-3 h-3" />
-                </Link>
-              </div>
-            </div>
+            ))}
           </div>
-        </div>
+        )}
       </section>
 
-      {/* 5 Core Pillars: EXPLORE, SEARCH, DISCOVER, NAVIGATE, TRUST */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-2xl mx-auto mb-10">
-          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            How the Digital Twin Serves VIT Bhopal
-          </h2>
-          <p className="text-slate-600 text-sm mt-2">
-            A cohesive bridge transforming fragmented campus information into an instant, trusted experience.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 sm:gap-6">
-          {/* EXPLORE */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-2.5">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Compass className="w-5 h-5" />
+      {/* 4. Campus Map Canvas & Location Quick Finder */}
+      <section className="bg-white rounded-3xl border border-black/[0.06] p-4 sm:p-6 shadow-[0_2px_12px_rgba(0,0,0,0.03)] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-[#86868B]">
+              Geospatial Campus Layer
             </div>
-            <h3 className="font-bold text-sm text-slate-900 tracking-tight">EXPLORE</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Find buildings, labs, libraries and facilities with precise floor plans and accessibility data.
-            </p>
-            <Link to="/explore" className="text-xs font-semibold text-blue-600 flex items-center gap-1 pt-1">
-              Campus Map <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          {/* SEARCH */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-2.5">
-            <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
-              <Search className="w-5 h-5" />
-            </div>
-            <h3 className="font-bold text-sm text-slate-900 tracking-tight">SEARCH</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Find any campus place, faculty room, lab or scheduled workshop instantly with live fuzzy suggestions.
-            </p>
-            <Link to="/search" className="text-xs font-semibold text-indigo-600 flex items-center gap-1 pt-1">
-              Unified Search <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          {/* DISCOVER */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-2.5">
-            <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <h3 className="font-bold text-sm text-slate-900 tracking-tight">DISCOVER</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              See events and announcements anchored directly at their actual physical venues on campus.
-            </p>
-            <Link to="/events" className="text-xs font-semibold text-rose-600 flex items-center gap-1 pt-1">
-              Active Events <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          {/* NAVIGATE */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-2.5">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <Navigation className="w-5 h-5" />
-            </div>
-            <h3 className="font-bold text-sm text-slate-900 tracking-tight">NAVIGATE</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Get campus-level pedestrian walking directions with exact meters and estimated walking times.
-            </p>
-            <Link to="/explore?navigate=true" className="text-xs font-semibold text-emerald-600 flex items-center gap-1 pt-1">
-              Plan Walking Route <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          {/* TRUST */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-xs hover:border-blue-300 transition-all space-y-2.5">
-            <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <h3 className="font-bold text-sm text-slate-900 tracking-tight">TRUST</h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Know who published the information with verified institutional badges for registered clubs and faculties.
-            </p>
-            <Link to="/about#trust" className="text-xs font-semibold text-amber-600 flex items-center gap-1 pt-1">
-              Trust Protocol <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* Digital Twin Conceptual Architecture Section */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="bg-slate-900 text-white rounded-2xl p-6 sm:p-10 shadow-xl overflow-hidden relative">
-          <div className="max-w-2xl space-y-4">
-            <span className="text-xs font-bold uppercase tracking-widest text-blue-400">
-              The Digital Twin Paradigm
-            </span>
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Physical Campus → Digital Twin → Smart Experience
+            <h2 className="text-lg font-bold text-[#1D1D1F] tracking-tight">
+              Interactive Campus Twin
             </h2>
-            <p className="text-slate-300 text-sm leading-relaxed">
-              "The point is not just a 3D model. The point is a useful digital layer over the real VIT Bhopal campus."
-            </p>
           </div>
-
-          <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/80 space-y-2">
-              <div className="text-amber-400 font-bold uppercase text-[10px] tracking-wider">Tier 1</div>
-              <div className="text-base font-bold text-white">PHYSICAL CAMPUS</div>
-              <ul className="space-y-1 text-slate-300">
-                <li>• Academic blocks & lecture halls</li>
-                <li>• Pedestrian avenues & perimeter gates</li>
-                <li>• Labs, library & residential hostels</li>
-              </ul>
-            </div>
-
-            <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/80 space-y-2">
-              <div className="text-blue-400 font-bold uppercase text-[10px] tracking-wider">Tier 2</div>
-              <div className="text-base font-bold text-white">DIGITAL TWIN</div>
-              <ul className="space-y-1 text-slate-300">
-                <li>• Geo-referenced locations & facilities</li>
-                <li>• Real-time scheduled events & venues</li>
-                <li>• Designated walking paths & verified clubs</li>
-              </ul>
-            </div>
-
-            <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/80 space-y-2">
-              <div className="text-emerald-400 font-bold uppercase text-[10px] tracking-wider">Tier 3</div>
-              <div className="text-base font-bold text-white">SMART EXPERIENCE</div>
-              <ul className="space-y-1 text-slate-300">
-                <li>• Instant global search across data types</li>
-                <li>• Step-by-step turn guidance & ETAs</li>
-                <li>• Role-based verification & confidence</li>
-              </ul>
-            </div>
-          </div>
+          <Link
+            to="/explore"
+            className="text-xs font-semibold text-[#0071E3] hover:underline flex items-center gap-1"
+          >
+            <span>Open Fullscreen Map</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
-      </section>
 
-      {/* Quick Stats Banner */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 text-center">
-            <div className="text-2xl sm:text-3xl font-extrabold text-blue-600">16+</div>
-            <div className="text-xs font-semibold text-slate-700 mt-1">Geo-Mapped Locations</div>
-            <div className="text-[11px] text-slate-400">Labs, hostels, complexes</div>
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Map Viewport */}
+          <div className="lg:w-3/4 h-[380px] sm:h-[420px] rounded-2xl overflow-hidden relative border border-black/[0.06] bg-[#E8ECE9]">
+            <CampusMap
+              locations={locations}
+              events={events}
+              selectedLocationId={selectedLocation?.id}
+              onSelectLocation={(loc) => setSelectedLocation(loc)}
+              onStartNavigationTo={(loc) => {
+                navigate(`/explore?to=${loc.id}&from=loc-ab-1&navigate=true`);
+              }}
+              height="100%"
+              className="w-full h-full"
+            />
           </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 text-center">
-            <div className="text-2xl sm:text-3xl font-extrabold text-indigo-600">8+</div>
-            <div className="text-xs font-semibold text-slate-700 mt-1">Scheduled Events</div>
-            <div className="text-[11px] text-slate-400">Workshops & hackathons</div>
-          </div>
+          {/* Quick Selected Location Inspector */}
+          <div className="lg:w-1/4 flex flex-col justify-between p-4 rounded-2xl bg-[#F5F5F7] border border-black/[0.04] space-y-4">
+            {selectedLocation ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-bold uppercase tracking-wider text-[#0071E3]">
+                    {selectedLocation.category}
+                  </span>
+                  <span className="text-[#86868B]">{selectedLocation.floor}</span>
+                </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 text-center">
-            <div className="text-2xl sm:text-3xl font-extrabold text-emerald-600">420 m</div>
-            <div className="text-xs font-semibold text-slate-700 mt-1">Smart Walk Routing</div>
-            <div className="text-[11px] text-slate-400">Library to Seminar Hall</div>
-          </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#1D1D1F] leading-snug">
+                    {selectedLocation.name}
+                  </h3>
+                  <p className="text-xs text-[#86868B] mt-1 line-clamp-3 leading-relaxed">
+                    {selectedLocation.description}
+                  </p>
+                </div>
 
-          <div className="p-4 rounded-xl bg-white border border-slate-200/90 text-center">
-            <div className="text-2xl sm:text-3xl font-extrabold text-amber-600">100%</div>
-            <div className="text-xs font-semibold text-slate-700 mt-1">Verified Publishers</div>
-            <div className="text-[11px] text-slate-400">Authentic university source</div>
+                <div className="pt-2 border-t border-black/[0.06] space-y-1.5 text-xs text-[#86868B]">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span>{selectedLocation.building}</span>
+                  </div>
+                  {selectedLocation.openingHours && (
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span>{selectedLocation.openingHours}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-xs text-[#86868B]">
+                Select any location on the map to preview details.
+              </div>
+            )}
+
+            {selectedLocation && (
+              <div className="pt-3 border-t border-black/[0.06] flex items-center gap-2">
+                <Link
+                  to={`/locations/${selectedLocation.id}`}
+                  className="flex-1 py-2 text-center text-xs font-semibold text-[#1D1D1F] bg-white hover:bg-slate-100 rounded-xl border border-black/[0.08] transition-colors"
+                >
+                  Profile
+                </Link>
+                <button
+                  onClick={() =>
+                    navigate(
+                      `/explore?to=${selectedLocation.id}&from=loc-ab-1&navigate=true`
+                    )
+                  }
+                  className="flex-1 py-2 text-center text-xs font-semibold text-white bg-[#0071E3] hover:bg-[#0077ED] rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Navigation className="w-3.5 h-3.5" />
+                  <span>Navigate</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>

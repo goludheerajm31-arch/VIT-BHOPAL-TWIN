@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { storage, DATA_CHANGE_EVENT } from '../services/storage';
 import { CampusEvent, CampusLocation } from '../types';
 import { VerifiedBadge } from '../components/common/VerifiedBadge';
+import { EventPoster } from '../components/events/EventPoster';
+import { formatISTDate, isEventExpired } from '../lib/dateUtils';
 import { useAuth } from '../services/auth';
 import { useToast } from '../components/layout/Toast';
 import { CampusMap } from '../components/CampusMap';
@@ -20,6 +22,7 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
+  FileText,
 } from 'lucide-react';
 
 export const EventDetailPage: React.FC = () => {
@@ -91,34 +94,41 @@ export const EventDetailPage: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Back Breadcrumb */}
-      <div>
+      {/* Back Breadcrumb & Expiration Notice */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <button
           onClick={() => navigate(-1)}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Events & Calendar
         </button>
+
+        {(isEventExpired(event) || event.status === 'expired' || event.status === 'completed') && (
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span>Event Concluded (Archived from Public Listings)</span>
+          </div>
+        )}
       </div>
 
       {/* Main Header & Cover Banner */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-        <div className="relative h-64 sm:h-80 w-full overflow-hidden bg-slate-900">
-          <img
-            src={event.coverImage || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop&q=80'}
-            alt={event.title}
-            className="w-full h-full object-cover opacity-85"
+        <div className="relative h-64 sm:h-96 w-full overflow-hidden bg-slate-950">
+          <EventPoster
+            coverImage={event.coverImage}
+            title={event.title}
+            category={event.category}
+            className="w-full h-full"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
 
-          <div className="absolute top-4 left-4 flex items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-white/90 text-slate-900 backdrop-blur-xs shadow-sm">
+          <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+            <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-white/95 text-slate-900 backdrop-blur-xs shadow-sm">
               {event.category}
             </span>
             {event.verified && <VerifiedBadge size="md" />}
           </div>
 
-          <div className="absolute bottom-4 left-4 right-4 text-white space-y-2">
+          <div className="absolute bottom-4 left-4 right-4 text-white space-y-2 z-10">
             <div className="text-xs sm:text-sm font-semibold text-blue-300">
               Organized by {event.organizer}
             </div>
@@ -137,8 +147,8 @@ export const EventDetailPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
               <div>
-                <div className="font-bold text-slate-900">Date</div>
-                <div className="text-slate-500 text-xs">{event.date}</div>
+                <div className="font-bold text-slate-900">Date (IST)</div>
+                <div className="text-slate-500 text-xs">{formatISTDate(event.date)}</div>
               </div>
             </div>
 
@@ -156,12 +166,26 @@ export const EventDetailPage: React.FC = () => {
               <MapPin className="w-4 h-4 text-rose-600 shrink-0" />
               <div>
                 <div className="font-bold text-slate-900">Venue</div>
-                <div className="text-slate-500 text-xs">{event.locationName}</div>
+                <div className="text-slate-500 text-xs">
+                  {event.locationName} {event.venueDetail ? `(${event.venueDetail})` : ''}
+                </div>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
+            {event.registrationUrl && (
+              <a
+                href={event.registrationUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Register / RSVP</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+
             {/* The primary Hackathon Golden Path action: [Navigate to Venue] */}
             <button
               onClick={handleNavigateToVenue}

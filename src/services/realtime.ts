@@ -2,10 +2,20 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { DATA_CHANGE_EVENT } from './storage';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
+/**
+ * ============================================================================
+ * SUPABASE REALTIME STREAMING ARCHITECTURE
+ * ============================================================================
+ * NOTE: Live PostgreSQL table changes are streamed via Supabase Realtime.
+ * Because authentication is intentionally being implemented in a subsequent phase,
+ * realtime authorization is NOT currently a production security boundary.
+ * RLS authorization on realtime channels will be enforced during the authentication phase.
+ * ============================================================================
+ */
+
 export type RealtimeStatus = 'connected' | 'connecting' | 'disconnected';
 
 class RealtimeClient {
-  private eventSource: EventSource | null = null;
   private supabaseChannel: RealtimeChannel | null = null;
   private listeners: Set<(status: RealtimeStatus) => void> = new Set();
   private currentStatus: RealtimeStatus = 'disconnected';
@@ -14,128 +24,124 @@ class RealtimeClient {
   connect() {
     if (typeof window === 'undefined') return;
 
-    // 1. If Supabase is configured, use Supabase Realtime Channels
-    if (isSupabaseConfigured() && supabase) {
-      if (this.supabaseChannel) return;
-
-      this.setStatus('connecting');
-
-      try {
-        this.supabaseChannel = supabase
-          .channel('campus_realtime_stream')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'events' },
-            (payload) => {
-              this.broadcastDataChange({
-                type: `EVENT_${payload.eventType}`,
-                table: 'events',
-                eventType: payload.eventType,
-                new: payload.new,
-                old: payload.old,
-              });
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'locations' },
-            (payload) => {
-              this.broadcastDataChange({
-                type: `LOCATION_${payload.eventType}`,
-                table: 'locations',
-                eventType: payload.eventType,
-                new: payload.new,
-                old: payload.old,
-              });
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'faculty' },
-            (payload) => {
-              this.broadcastDataChange({
-                type: `FACULTY_${payload.eventType}`,
-                table: 'faculty',
-                eventType: payload.eventType,
-                new: payload.new,
-                old: payload.old,
-              });
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'announcements' },
-            (payload) => {
-              this.broadcastDataChange({
-                type: `ANNOUNCEMENT_${payload.eventType}`,
-                table: 'announcements',
-                eventType: payload.eventType,
-                new: payload.new,
-                old: payload.old,
-              });
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'publishers' },
-            (payload) => {
-              this.broadcastDataChange({
-                type: `PUBLISHER_${payload.eventType}`,
-                table: 'publishers',
-                eventType: payload.eventType,
-                new: payload.new,
-                old: payload.old,
-              });
-            }
-          )
-          .subscribe((status, err) => {
-            if (status === 'SUBSCRIBED') {
-              this.setStatus('connected');
-            } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
-              this.setStatus('disconnected');
-              this.scheduleReconnect();
-            } else if (err) {
-              this.setStatus('disconnected');
-              this.scheduleReconnect();
-            }
-          });
-      } catch (err) {
-        console.warn('[Realtime] Supabase subscription initialization error:', err);
-        this.setStatus('disconnected');
-        this.scheduleReconnect();
-      }
+    if (!isSupabaseConfigured() || !supabase) {
+      this.setStatus('disconnected');
       return;
     }
 
-    // 2. Fallback to server SSE stream if Supabase is not yet configured
-    if (this.eventSource) return;
+    if (this.supabaseChannel) return;
 
     this.setStatus('connecting');
 
     try {
-      this.eventSource = new EventSource('/api/realtime/events');
-
-      this.eventSource.onopen = () => {
-        this.setStatus('connected');
-      };
-
-      this.eventSource.onmessage = (e) => {
-        try {
-          const payload = JSON.parse(e.data);
-          this.broadcastDataChange(payload);
-        } catch {
-          // Ignore non-json heartbeats
-        }
-      };
-
-      this.eventSource.onerror = () => {
-        this.setStatus('disconnected');
-        this.eventSource?.close();
-        this.eventSource = null;
-        this.scheduleReconnect();
-      };
-    } catch {
+      this.supabaseChannel = supabase
+        .channel('campus_realtime_stream')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'events' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `EVENT_${payload.eventType}`,
+              table: 'events',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'locations' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `LOCATION_${payload.eventType}`,
+              table: 'locations',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'faculty' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `FACULTY_${payload.eventType}`,
+              table: 'faculty',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'announcements' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `ANNOUNCEMENT_${payload.eventType}`,
+              table: 'announcements',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'publishers' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `PUBLISHER_${payload.eventType}`,
+              table: 'publishers',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'saved_items' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `SAVED_${payload.eventType}`,
+              table: 'saved_items',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'campus_guides' },
+          (payload) => {
+            this.broadcastDataChange({
+              type: `GUIDE_${payload.eventType}`,
+              table: 'campus_guides',
+              eventType: payload.eventType,
+              new: payload.new,
+              old: payload.old,
+            });
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            this.setStatus('connected');
+          } else if (status === 'TIMED_OUT' || status === 'CLOSED') {
+            this.setStatus('disconnected');
+            this.scheduleReconnect();
+          } else if (err) {
+            this.setStatus('disconnected');
+            this.scheduleReconnect();
+          }
+        });
+    } catch (err) {
+      console.warn('[Supabase Realtime] Channel subscription error:', err);
       this.setStatus('disconnected');
+      this.scheduleReconnect();
     }
   }
 
@@ -152,7 +158,7 @@ class RealtimeClient {
     clearTimeout(this.reconnectTimeout);
     this.reconnectTimeout = setTimeout(() => {
       this.connect();
-    }, 3000);
+    }, 5000);
   }
 
   disconnect() {
@@ -160,10 +166,6 @@ class RealtimeClient {
     if (this.supabaseChannel && supabase) {
       supabase.removeChannel(this.supabaseChannel);
       this.supabaseChannel = null;
-    }
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
     }
     this.setStatus('disconnected');
   }

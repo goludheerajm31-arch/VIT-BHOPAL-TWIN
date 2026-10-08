@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/auth';
+import { useDemoRole } from '../services/demoRoleSwitcher';
 import { storage, DATA_CHANGE_EVENT } from '../services/storage';
 import { CampusEvent, Announcement } from '../types';
 import { VerifiedBadge } from '../components/common/VerifiedBadge';
@@ -21,28 +22,48 @@ import {
 
 export const PublisherDashboard: React.FC = () => {
   const { user, role } = useAuth();
+  const { activeRole, isSimulated } = useDemoRole();
   const navigate = useNavigate();
   const { toast } = useToast();
 
   const [publisherEvents, setPublisherEvents] = useState<CampusEvent[]>([]);
   const [publisherAnnouncements, setPublisherAnnouncements] = useState<Announcement[]>([]);
 
+  const isAuthorizedPublisher =
+    role === 'ADMIN' ||
+    role === 'PUBLISHER' ||
+    activeRole === 'ADMIN' ||
+    activeRole === 'PUBLISHER' ||
+    Boolean(user?.isPublisher) ||
+    Boolean(user?.email && storage.hasPublisherAccess(user.email)) ||
+    Boolean(user?.id && storage.hasPublisherAccess(user.id));
+
+  const pubRecord = user
+    ? storage.getPublisherByEmail(user.email) || storage.getPublisherByUserId(user.id)
+    : undefined;
+
   const loadData = () => {
-    const allEvents = storage.getEvents();
+    const allEvents = storage.getAllEvents();
     const allAnnouncements = storage.getAnnouncements();
 
     if (user) {
       // Filter by organizer or publisherId
+      const orgName = pubRecord?.organizationName || user.name;
       const myEvents = allEvents.filter(
         (e) =>
           e.publisherId === user.id ||
+          (pubRecord && e.publisherId === pubRecord.id) ||
           e.organizer.toLowerCase().includes(user.name.toLowerCase()) ||
-          user.name.toLowerCase().includes('club')
+          e.organizer.toLowerCase().includes(orgName.toLowerCase())
       );
       setPublisherEvents(myEvents.length > 0 ? myEvents : allEvents.slice(0, 3));
 
       const myAnn = allAnnouncements.filter(
-        (a) => a.publisherId === user.id || a.publisherName === user.name
+        (a) =>
+          a.publisherId === user.id ||
+          (pubRecord && a.publisherId === pubRecord.id) ||
+          a.publisherName === user.name ||
+          (pubRecord && a.publisherName === pubRecord.organizationName)
       );
       setPublisherAnnouncements(myAnn.length > 0 ? myAnn : allAnnouncements.slice(0, 2));
     }
@@ -61,27 +82,90 @@ export const PublisherDashboard: React.FC = () => {
     }
   };
 
+  if (!user) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <h2 className="text-xl font-bold text-slate-900">Publisher Studio</h2>
+        <p className="text-xs text-slate-500">Please sign in with your institutional account to access the publisher dashboard.</p>
+        <Link
+          to="/login"
+          className="inline-block px-4 py-2 bg-indigo-600 text-white font-semibold rounded-xl text-xs"
+        >
+          Sign In
+        </Link>
+      </div>
+    );
+  }
+
+  if (!isAuthorizedPublisher) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+          <ShieldCheck className="w-6 h-6" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Publisher Authorization Required</h2>
+        <p className="text-xs text-slate-600 leading-relaxed">
+          Your account (<strong>{user.email}</strong>) does not currently have active Publisher access.
+          Campus publishing privileges are granted to authorized student chapters and clubs following administrative review.
+        </p>
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <Link
+            to="/dashboard"
+            className="px-4 py-2 bg-[#0071E3] hover:bg-[#0077ED] text-white rounded-xl text-xs font-semibold shadow-xs"
+          >
+            Apply for Publisher Access in Profile
+          </Link>
+          <Link
+            to="/"
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+          >
+            Campus Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const displayName = pubRecord?.organizationName || pubRecord?.name || user.name;
+  const displayDepartment = pubRecord?.department || user.department || 'Authorized Student Organization';
+  const displayInitials = displayName.slice(0, 2).toUpperCase();
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Simulation Notice Banner if viewing via professor demonstration */}
+      {isSimulated && role !== 'PUBLISHER' && role !== 'ADMIN' && !user?.isMasterAdmin && (
+        <div className="p-3.5 bg-indigo-50/90 border border-indigo-200/80 rounded-2xl text-indigo-900 text-xs flex items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>
+              <strong>Demonstration Mode:</strong> Publisher Studio is active in simulation view. Live event creation requires authorized publisher permissions.
+            </span>
+          </div>
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-indigo-100 rounded-md text-indigo-800 shrink-0">
+            Simulated Publisher
+          </span>
+        </div>
+      )}
+
       {/* Publisher Header Banner */}
       <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-indigo-600 text-white font-extrabold text-xl flex items-center justify-center shadow-md">
-            AI
+            {displayInitials}
           </div>
 
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                {user?.name || 'AI & ML Club'}
+                {displayName}
               </h1>
               <VerifiedBadge size="md" />
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Verified Student Organization · School of Computing Science & Engineering
+              {displayDepartment} · Official Campus Publisher
             </p>
             <div className="text-[11px] text-slate-400 mt-0.5">
-              Publisher ID: {user?.id || 'pub-aiml-club'} · Verified since Jan 2025
+              Contact: {user.email} {user.regNumber && `· Student Reg: ${user.regNumber}`}
             </div>
           </div>
         </div>

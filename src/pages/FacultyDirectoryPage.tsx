@@ -78,6 +78,10 @@ export const FacultyDirectoryPage: React.FC = () => {
           }
         }
 
+        if (faculty.status === 'DISABLED') {
+          return false;
+        }
+
         if (selectedSchool !== 'all' && faculty.school !== selectedSchool) {
           return false;
         }
@@ -86,7 +90,12 @@ export const FacultyDirectoryPage: React.FC = () => {
           return false;
         }
 
-        if (onlyAvailable && faculty.status !== 'available') {
+        const presence =
+          faculty.liveStatus ||
+          faculty.cabinStatus ||
+          (faculty.status === 'available' ? 'available' : 'scheduled');
+
+        if (onlyAvailable && presence !== 'available') {
           return false;
         }
 

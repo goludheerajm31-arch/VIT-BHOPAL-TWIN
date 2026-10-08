@@ -69,7 +69,14 @@ export const FacultyCabinCard: React.FC<FacultyCabinCardProps> = ({
   };
 
   const getStatusDot = () => {
-    switch (faculty.status) {
+    const presence =
+      faculty.liveStatus ||
+      faculty.cabinStatus ||
+      (['available', 'in_lecture', 'meeting', 'busy'].includes(faculty.status as any)
+        ? (faculty.status as any)
+        : 'available');
+
+    switch (presence) {
       case 'available':
         return (
           <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-600">

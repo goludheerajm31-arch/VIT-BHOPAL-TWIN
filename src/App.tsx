@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { AuthProvider } from './services/auth';
+import { DemoRoleProvider } from './services/demoRoleSwitcher';
 import { ToastProvider } from './components/layout/Toast';
 import { Navbar } from './components/layout/Navbar';
 import { MobileNav } from './components/layout/MobileNav';
@@ -16,10 +17,12 @@ import { LocationsPage } from './pages/LocationsPage';
 import { LocationDetailPage } from './pages/LocationDetailPage';
 import { NavigationPage } from './pages/NavigationPage';
 import { AnnouncementsPage } from './pages/AnnouncementsPage';
+import { CampusHubPage } from './pages/CampusHubPage';
 import { FacultyDirectoryPage } from './pages/FacultyDirectoryPage';
 import { FacultyDashboard } from './pages/FacultyDashboard';
 import { AboutPage } from './pages/AboutPage';
 import { LoginPage } from './pages/LoginPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { StudentDashboard } from './pages/StudentDashboard';
 import { SavedItemsPage } from './pages/SavedItemsPage';
 import { PublisherDashboard } from './pages/PublisherDashboard';
@@ -43,13 +46,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ToastProvider>
-          <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white">
-            <ScrollToTop />
-            <Navbar />
+        <DemoRoleProvider>
+          <ToastProvider>
+            <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white">
+              <ScrollToTop />
+              <Navbar />
 
-            <main className="flex-1">
-              <Routes>
+              <main className="flex-1">
+                <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/explore" element={<ExplorePage />} />
                 <Route path="/search" element={<SearchPage />} />
@@ -63,14 +67,21 @@ export default function App() {
                 <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
                 <Route path="/faculty/portal" element={<Navigate to="/faculty/dashboard" replace />} />
                 <Route path="/cabins" element={<FacultyDirectoryPage />} />
+                <Route path="/hub" element={<CampusHubPage />} />
+                <Route path="/campus-hub" element={<CampusHubPage />} />
+                <Route path="/campushub" element={<CampusHubPage />} />
+                <Route path="/guides" element={<Navigate to="/hub" replace />} />
+                <Route path="/guide" element={<Navigate to="/hub" replace />} />
                 <Route path="/announcements" element={<AnnouncementsPage />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/dashboard" element={<StudentDashboard />} />
                 <Route path="/profile" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/saved" element={<SavedItemsPage />} />
                 <Route path="/publisher" element={<PublisherDashboard />} />
                 <Route path="/publisher/events/create" element={<PublisherCreateEventPage />} />
+                <Route path="/publisher/events/new" element={<PublisherCreateEventPage />} />
                 <Route path="/admin" element={<AdminDashboard />} />
                 <Route path="/admin/verification" element={<AdminVerificationPage />} />
                 <Route path="*" element={<NotFoundPage />} />
@@ -81,7 +92,8 @@ export default function App() {
             <MobileNav />
           </div>
         </ToastProvider>
-      </AuthProvider>
-    </BrowserRouter>
+      </DemoRoleProvider>
+    </AuthProvider>
+  </BrowserRouter>
   );
 }

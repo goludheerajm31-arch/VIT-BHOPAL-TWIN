@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FacultyMember, FacultyStatus } from '../../types';
+import { FacultyMember, FacultyStatus, FacultyAccountStatus } from '../../types';
 import { storage } from '../../services/storage';
 import { useToast } from '../layout/Toast';
 import { useAuth } from '../../services/auth';
+import { normalizeEmail, validateFacultyEmail, INSTITUTIONAL_DOMAIN } from '../../lib/facultyAuthUtils';
 import {
   X,
   Plus,
@@ -172,7 +173,7 @@ export const AddFacultyModal: React.FC<AddFacultyModalProps> = ({
   initialFaculty,
 }) => {
   const { toast } = useToast();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const isAdmin = role === 'ADMIN';
 
   const isEditing = !!initialFaculty;
@@ -229,7 +230,12 @@ export const AddFacultyModal: React.FC<AddFacultyModalProps> = ({
       setSubjects(initialFaculty.subjects || []);
       setResearchArea(initialFaculty.researchArea || '');
       setDirectionsGuide(initialFaculty.directionsGuide || '');
-      setStatus(initialFaculty.status || 'available');
+      setStatus(
+        (initialFaculty.liveStatus as FacultyStatus) ||
+          (['available', 'in_lecture', 'meeting', 'busy'].includes(initialFaculty.status as any)
+            ? (initialFaculty.status as any)
+            : 'available')
+      );
       setAvatarUrl(initialFaculty.avatarUrl || '');
       setUrlInput(initialFaculty.avatarUrl || '');
     } else {
@@ -471,7 +477,7 @@ export const AddFacultyModal: React.FC<AddFacultyModalProps> = ({
   };
 
   // Save handler
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!isAdmin) {
@@ -483,15 +489,28 @@ export const AddFacultyModal: React.FC<AddFacultyModalProps> = ({
 
     if (!name.trim()) newErrors.name = 'Faculty name is required';
     if (!cabinNumber.trim()) newErrors.cabinNumber = 'Cabin number is required (e.g. AB1-314)';
-    if (!email.trim()) newErrors.email = 'Official university email is required';
+
+    // Institutional email validation & normalization
+    const emailValidation = validateFacultyEmail(email);
+    if (!emailValidation.isValid) {
+      newErrors.email = emailValidation.error || 'Valid institutional @vitbhopal.ac.in email is required';
+    }
+
+    const normEmail = emailValidation.normalized;
+
+    // Database duplicate check on normalized email
+    const existingFaculty = storage.getFacultyByEmail(normEmail);
+    if (existingFaculty && (!isEditing || existingFaculty.id !== initialFaculty?.id)) {
+      newErrors.email = `A faculty member with institutional email "${normEmail}" is already registered (Status: ${existingFaculty.status}). Duplicate profiles are not permitted.`;
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      toast('Please fill in the required fields', 'error');
+      toast(newErrors.email || 'Please fill in the required fields', 'error');
       return;
     }
 
-    const id = initialFaculty?.id || `fac-${Date.now()}-${cabinNumber.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+    const id = initialFaculty?.id || crypto.randomUUID();
 
     // Ensure directions guide has at least a fallback
     const finalDirections =
@@ -504,35 +523,47 @@ export const AddFacultyModal: React.FC<AddFacultyModalProps> = ({
       prefix: prefix.trim(),
       designation: designation.trim(),
       school,
-      departmentName: departmentName.trim(),
+      department: departmentName.trim() || 'School of Computing Science & Engineering',
+      departmentName: departmentName.trim() || 'School of Computing Science & Engineering',
       cabinNumber: cabinNumber.trim().toUpperCase(),
       buildingId,
       buildingName,
       floor,
       wing: wing.trim(),
       roomDetails: roomDetails.trim(),
-      email: email.trim(),
+      email: normEmail,
       phone: phone.trim() || undefined,
       consultationHours: consultationHours.trim() || 'By Appointment',
       subjects: subjects.length > 0 ? subjects : ['General Academics'],
       researchArea: researchArea.trim() || undefined,
       directionsGuide: finalDirections,
-      status,
+      status: isEditing ? (initialFaculty?.status || 'PROVISIONED') : 'PROVISIONED',
+      accountStatus: isEditing ? (initialFaculty?.status || 'PROVISIONED') : 'PROVISIONED',
+      liveStatus: (status as FacultyStatus) || initialFaculty?.liveStatus || 'available',
+      cabinStatus: (status as FacultyStatus) || initialFaculty?.liveStatus || 'available',
+      auth_user_id: isEditing ? (initialFaculty?.auth_user_id || null) : null,
+      authUserId: isEditing ? (initialFaculty?.auth_user_id || null) : null,
+      created_by: isEditing ? (initialFaculty?.created_by || null) : (user?.id || null),
+      createdBy: isEditing ? (initialFaculty?.created_by || null) : (user?.id || null),
       avatarUrl: avatarUrl.trim() || undefined,
     };
 
-    storage.saveFaculty(facultyToSave);
-    toast(
-      isEditing
-        ? `Updated Cabin ${facultyToSave.cabinNumber} (${facultyToSave.name})`
-        : `Successfully added Cabin ${facultyToSave.cabinNumber} for ${facultyToSave.name}!`,
-      'success'
-    );
+    try {
+      await storage.saveFaculty(facultyToSave, user?.id);
+      toast(
+        isEditing
+          ? `Updated Cabin ${facultyToSave.cabinNumber} (${facultyToSave.name})`
+          : `Pre-provisioned faculty record for ${facultyToSave.name}. When they sign in with ${facultyToSave.email}, their account will be claimed automatically.`,
+        'success'
+      );
 
-    if (onSuccess) {
-      onSuccess(facultyToSave);
+      if (onSuccess) {
+        onSuccess(facultyToSave);
+      }
+      onClose();
+    } catch (err: any) {
+      toast(err.message || 'Failed to save faculty record', 'error');
     }
-    onClose();
   };
 
   if (!isOpen) return null;

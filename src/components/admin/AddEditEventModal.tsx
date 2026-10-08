@@ -2,7 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { CampusEvent, CampusLocation, EventCategory } from '../../types';
 import { storage } from '../../services/storage';
 import { useToast } from '../layout/Toast';
+import { EventPosterUploader } from '../events/EventPosterUploader';
+import { uploadEventPosterFile } from '../../lib/supabase';
 import { X, Calendar, MapPin, Clock, Tag, Sparkles } from 'lucide-react';
+
+const CATEGORIES: EventCategory[] = [
+  'Workshops',
+  'Technical',
+  'Clubs',
+  'Cultural',
+  'Sports',
+  'Academics',
+  'Competition',
+  'Seminar',
+  'Orientation',
+  'Other',
+];
 
 interface AddEditEventModalProps {
   isOpen: boolean;
@@ -25,7 +40,7 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [category, setCategory] = useState<EventCategory>('Technical');
-  const [date, setDate] = useState('2026-09-25');
+  const [date, setDate] = useState('2026-10-08');
   const [startTime, setStartTime] = useState('10:00 AM');
   const [endTime, setEndTime] = useState('01:00 PM');
   const [locationId, setLocationId] = useState('');
@@ -33,9 +48,10 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
   const [organizer, setOrganizer] = useState('AI & Machine Learning Club');
   const [capacity, setCapacity] = useState('100');
   const [description, setDescription] = useState('');
-  const [coverImage, setCoverImage] = useState(
-    'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=1200&auto=format&fit=crop&q=80'
-  );
+  const [registrationUrl, setRegistrationUrl] = useState('');
+  const [posterFile, setPosterFile] = useState<File | null>(null);
+  const [currentCoverUrl, setCurrentCoverUrl] = useState<string | undefined>(undefined);
+  const [currentStoragePath, setCurrentStoragePath] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (initialEvent) {
@@ -50,15 +66,15 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
       setOrganizer(initialEvent.organizer || 'AI & Machine Learning Club');
       setCapacity(initialEvent.capacity ? String(initialEvent.capacity) : '100');
       setDescription(initialEvent.description || '');
-      setCoverImage(
-        initialEvent.coverImage ||
-          'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=1200&auto=format&fit=crop&q=80'
-      );
+      setRegistrationUrl(initialEvent.registrationUrl || '');
+      setCurrentCoverUrl(initialEvent.coverImage);
+      setCurrentStoragePath(initialEvent.storagePath);
+      setPosterFile(null);
     } else {
       setTitle('');
       setSubtitle('');
       setCategory('Workshops');
-      setDate('2026-09-25');
+      setDate('2026-10-08');
       setStartTime('10:00 AM');
       setEndTime('01:00 PM');
       setLocationId(locations[0]?.id || 'loc-ab-1');
@@ -66,9 +82,10 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
       setOrganizer('AI & Machine Learning Club');
       setCapacity('100');
       setDescription('Hands-on technical workshop covering modern AI architectures and practical labs.');
-      setCoverImage(
-        'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=1200&auto=format&fit=crop&q=80'
-      );
+      setRegistrationUrl('');
+      setCurrentCoverUrl(undefined);
+      setCurrentStoragePath(undefined);
+      setPosterFile(null);
     }
   }, [initialEvent, isOpen, locations]);
 
@@ -86,31 +103,58 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
     }
 
     const selectedLoc = locations.find((l) => l.id === locationId) || locations[0];
-
-    const eventToSave: CampusEvent = {
-      id: initialEvent ? initialEvent.id : `evt-${Date.now()}`,
-      title: title.trim(),
-      subtitle: subtitle.trim() || undefined,
-      category,
-      date,
-      startTime,
-      endTime,
-      locationId: selectedLoc?.id || 'loc-ab-1',
-      locationName: selectedLoc?.name || 'VITB Academic Block 1',
-      venueDetail: venueDetail.trim() || undefined,
-      organizer: organizer.trim() || 'VIT Bhopal Campus',
-      publisherId: initialEvent?.publisherId || 'pub-aiml-club',
-      capacity: capacity ? parseInt(capacity, 10) : undefined,
-      description: description.trim(),
-      coverImage: coverImage.trim() || undefined,
-      verified: true,
-      status: 'upcoming',
-      approvalStatus: 'approved',
-      tags: [category, 'Campus', 'Live'],
-    };
+    const eventId = initialEvent ? initialEvent.id : `evt-${Date.now()}`;
 
     setIsSubmitting(true);
     try {
+      let coverImage = currentCoverUrl;
+      let storagePath = currentStoragePath;
+      let posterMeta = initialEvent?.posterMetadata;
+
+      // Handle new poster upload
+      if (posterFile) {
+        toast('Uploading poster to secure storage...', 'info');
+        const uploadResult = await uploadEventPosterFile(eventId, posterFile);
+        coverImage = uploadResult.publicUrl;
+        storagePath = uploadResult.storagePath;
+        posterMeta = {
+          fileName: uploadResult.fileName,
+          storagePath: uploadResult.storagePath,
+          mimeType: uploadResult.fileType,
+          fileSize: uploadResult.fileSize,
+          uploadedAt: new Date().toISOString(),
+        };
+      } else if (!currentCoverUrl) {
+        coverImage = undefined;
+        storagePath = undefined;
+        posterMeta = undefined;
+      }
+
+      const eventToSave: CampusEvent = {
+        id: eventId,
+        title: title.trim(),
+        subtitle: subtitle.trim() || undefined,
+        category,
+        date,
+        startTime: startTime.trim(),
+        endTime: endTime.trim(),
+        locationId: selectedLoc?.id || 'loc-ab-1',
+        locationName: selectedLoc?.name || 'VITB Academic Block 1',
+        venueDetail: venueDetail.trim() || undefined,
+        organizer: organizer.trim() || 'VIT Bhopal Campus',
+        publisherId: initialEvent?.publisherId || 'pub-aiml-club',
+        capacity: capacity ? parseInt(capacity, 10) : undefined,
+        registrationUrl: registrationUrl.trim() || undefined,
+        description: description.trim(),
+        coverImage,
+        storagePath,
+        posterMetadata: posterMeta,
+        verified: true,
+        status: initialEvent?.status || 'upcoming',
+        approvalStatus: 'approved',
+        tags: [category, 'Campus', 'Verified'],
+      };
+
       await storage.saveEvent(eventToSave);
       toast(
         initialEvent ? `Updated "${eventToSave.title}"` : `Created event "${eventToSave.title}" live!`,
@@ -289,10 +333,11 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-[#1D1D1F] mb-1">
-              Description
+              Description *
             </label>
             <textarea
               rows={3}
+              required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Workshop highlights, prerequisites, agenda, etc."
@@ -302,14 +347,27 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-[#1D1D1F] mb-1">
-              Cover Image URL
+              Registration / RSVP Link (Optional)
             </label>
             <input
               type="url"
-              value={coverImage}
-              onChange={(e) => setCoverImage(e.target.value)}
-              placeholder="https://images.unsplash.com/..."
+              value={registrationUrl}
+              onChange={(e) => setRegistrationUrl(e.target.value)}
+              placeholder="https://vitbhopal.ac.in/events/registration"
               className="w-full px-3.5 py-2.5 bg-[#F5F5F7] border border-black/[0.06] rounded-xl text-xs text-[#1D1D1F] outline-none focus:bg-white focus:border-[#0071E3]"
+            />
+          </div>
+
+          {/* Event Poster Uploader */}
+          <div className="pt-2">
+            <EventPosterUploader
+              currentPosterUrl={currentCoverUrl}
+              onFileSelect={(file) => setPosterFile(file)}
+              onRemovePoster={() => {
+                setPosterFile(null);
+                setCurrentCoverUrl(undefined);
+              }}
+              disabled={isSubmitting}
             />
           </div>
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../services/auth';
+import { useDemoRole } from '../services/demoRoleSwitcher';
 import { storage, DATA_CHANGE_EVENT } from '../services/storage';
-import { api } from '../services/api';
 import { useToast } from '../components/layout/Toast';
 import { FacultyMember, FacultyStatus, Announcement, CampusLocation } from '../types';
 import { SEED_FACULTY } from '../services/data/seeds';
@@ -80,11 +80,10 @@ const DEFAULT_APPOINTMENTS: StudentAppointment[] = [
   },
 ];
 
-const APPOINTMENTS_STORAGE_KEY = 'vit_faculty_appointments_v1';
-
 export const FacultyDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, role, loginAsFaculty, quickLoginAs } = useAuth();
+  const { user, role, loginAsFaculty } = useAuth();
+  const { activeRole, isSimulated } = useDemoRole();
   const { toast } = useToast();
 
   const [faculty, setFaculty] = useState<FacultyMember | null>(null);
@@ -95,16 +94,8 @@ export const FacultyDashboard: React.FC = () => {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
   const [customStatusNote, setCustomStatusNote] = useState('Available in Cabin for consultation');
 
-  // Appointments state
-  const [appointments, setAppointments] = useState<StudentAppointment[]>(() => {
-    try {
-      const stored = localStorage.getItem(APPOINTMENTS_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch (e) {
-      console.warn(e);
-    }
-    return DEFAULT_APPOINTMENTS;
-  });
+  // Appointments state (React state only)
+  const [appointments, setAppointments] = useState<StudentAppointment[]>(DEFAULT_APPOINTMENTS);
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -120,24 +111,21 @@ export const FacultyDashboard: React.FC = () => {
     const allFaculty = storage.getFaculty();
     setLocations(storage.getLocations());
 
-    // Match logged-in user to faculty member
+    // Match logged-in user to faculty member via normalized email, auth_user_id, or facultyId
     let currentFac: FacultyMember | undefined;
     if (user?.facultyId) {
       currentFac = allFaculty.find((f) => f.id === user.facultyId);
     }
-    if (!currentFac && user?.email) {
-      currentFac = allFaculty.find(
-        (f) =>
-          f.email.toLowerCase() === user.email.toLowerCase() ||
-          (user.email.includes('faculty') && f.id === 'fac-scse-01')
-      );
+    if (!currentFac && user?.id) {
+      currentFac = allFaculty.find((f) => f.auth_user_id === user.id || f.authUserId === user.id);
     }
-    if (!currentFac && user?.name) {
-      currentFac = allFaculty.find((f) => f.name.toLowerCase() === user.name.toLowerCase());
+    if (!currentFac && user?.email) {
+      const normEmail = user.email.trim().toLowerCase();
+      currentFac = allFaculty.find((f) => f.email.trim().toLowerCase() === normEmail);
     }
 
-    // Fallback to first faculty if still not found
-    if (!currentFac) {
+    // In development mode or demonstration mode, if user is in FACULTY or ADMIN perspective without specific linked record, default to primary demo faculty
+    if (!currentFac && (role === 'FACULTY' || role === 'ADMIN' || activeRole === 'FACULTY' || activeRole === 'ADMIN')) {
       currentFac = allFaculty[0] || SEED_FACULTY[0];
     }
 
@@ -169,23 +157,17 @@ export const FacultyDashboard: React.FC = () => {
     return () => window.removeEventListener(DATA_CHANGE_EVENT, loadData);
   }, [user]);
 
-  // Persist appointments
+  // In-memory appointments update
   const updateAppointments = (newApts: StudentAppointment[]) => {
     setAppointments(newApts);
-    try {
-      localStorage.setItem(APPOINTMENTS_STORAGE_KEY, JSON.stringify(newApts));
-    } catch (e) {
-      console.warn(e);
-    }
   };
 
   const handleStatusChange = async (newStatus: FacultyStatus) => {
     if (!faculty) return;
     setIsUpdatingStatus(true);
     try {
-      await storage.updateFacultyStatus(faculty.id, newStatus);
-      await api.updateFacultyStatus(faculty.id, newStatus).catch(() => {});
-      setFaculty((prev) => (prev ? { ...prev, status: newStatus } : null));
+      await storage.updateFacultyCabinStatus(faculty.id, newStatus);
+      setFaculty((prev) => (prev ? { ...prev, liveStatus: newStatus, cabinStatus: newStatus } : null));
 
       const statusLabels: Record<FacultyStatus, string> = {
         available: 'Available in Cabin',
@@ -222,7 +204,6 @@ export const FacultyDashboard: React.FC = () => {
 
     try {
       await storage.saveFaculty(updatedFaculty);
-      await api.saveFaculty(updatedFaculty).catch(() => {});
       setFaculty(updatedFaculty);
       setIsEditModalOpen(false);
       toast('Cabin details and consultation hours saved successfully!', 'success');
@@ -235,7 +216,6 @@ export const FacultyDashboard: React.FC = () => {
   const handleDeleteAnnouncement = async (annId: string) => {
     try {
       await storage.deleteAnnouncement(annId);
-      await api.deleteAnnouncement(annId).catch(() => {});
       setAnnouncements((prev) => prev.filter((a) => a.id !== annId));
       toast('Announcement deleted', 'info');
     } catch (err) {
@@ -252,12 +232,6 @@ export const FacultyDashboard: React.FC = () => {
       cancelled: 'Appointment cancelled.',
     };
     toast(messages[nextStatus] || 'Appointment updated', 'success');
-  };
-
-  const handleSwitchFaculty = async (f: FacultyMember) => {
-    await loginAsFaculty(f.id);
-    toast(`Switched profile to ${f.name} (Cabin ${f.cabinNumber})`, 'success');
-    loadData();
   };
 
   const statusConfig: Record<FacultyStatus, { label: string; desc: string; bg: string; text: string; ring: string }> = {
@@ -291,10 +265,25 @@ export const FacultyDashboard: React.FC = () => {
     },
   };
 
-  const currentStatus = faculty?.status || 'available';
+  const currentStatus = (faculty?.liveStatus || faculty?.cabinStatus || 'available') as FacultyStatus;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {/* Simulation Notice Banner if viewing via professor demonstration */}
+      {isSimulated && role !== 'FACULTY' && role !== 'ADMIN' && !user?.isMasterAdmin && (
+        <div className="p-3.5 bg-blue-50/90 border border-blue-200/80 rounded-2xl text-blue-900 text-xs flex items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>
+              <strong>Demonstration Mode:</strong> Faculty Portal is active in simulation view. Live cabin presence updates and faculty configuration are previewed.
+            </span>
+          </div>
+          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 bg-blue-100 rounded-md text-blue-800 shrink-0">
+            Simulated Faculty
+          </span>
+        </div>
+      )}
+
       {/* Top Banner & Quick Faculty Switcher */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -317,24 +306,6 @@ export const FacultyDashboard: React.FC = () => {
               {faculty?.designation} · {faculty?.departmentName} · Cabin {faculty?.cabinNumber}
             </p>
           </div>
-        </div>
-
-        {/* Demo Faculty Switcher */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-[11px] font-medium text-slate-500">Demo Faculty:</span>
-          {SEED_FACULTY.slice(0, 4).map((f) => (
-            <button
-              key={f.id}
-              onClick={() => handleSwitchFaculty(f)}
-              className={`px-2.5 py-1 rounded-xl text-xs font-medium border transition-all cursor-pointer ${
-                faculty?.id === f.id
-                  ? 'bg-[#0071E3] text-white border-[#0071E3] shadow-xs'
-                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              {f.name.split(' ')[1] || f.name} ({f.cabinNumber})
-            </button>
-          ))}
         </div>
       </div>
 

@@ -35,11 +35,8 @@ export const Footer: React.FC = () => {
         </div>
 
         <div className="border-t border-black/[0.06] pt-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-[#86868B]">
-          <div>© {new Date().getFullYear()} VIT Bhopal. All rights reserved.</div>
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span>Systems Normal</span>
-          </div>
+          <div>© {new Date().getFullYear()} VIT Bhopal University. All rights reserved.</div>
+          <div>Official Digital Twin Portal</div>
         </div>
       </div>
     </footer>
