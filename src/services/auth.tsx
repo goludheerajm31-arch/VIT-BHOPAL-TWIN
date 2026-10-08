@@ -406,7 +406,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         options: {
           redirectTo: `${window.location.origin}/login`,
           queryParams: {
-            hd: 'vitbhopal.ac.in',
             prompt: 'select_account',
           },
         },
