@@ -1,20 +1,21 @@
 -- ============================================================================
--- VIT Bhopal Digital Campus Twin: Production Supabase PostgreSQL Schema
--- Hardened Row Level Security (RLS), Foreign Keys, Triggers, & Realtime Setup
+-- VIT Bhopal Digital Campus Twin: Production PostgreSQL Schema (Supabase)
+-- Authoritative Canonical Schema, Database-Controlled RBAC, & Hardened RLS
 -- ============================================================================
 
--- Enable required extensions
+-- ----------------------------------------------------------------------------
+-- 1. Extensions & Schema Grants
+-- ----------------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Grant schema usage to standard Supabase API roles
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO anon, authenticated, service_role;
 
 -- ----------------------------------------------------------------------------
--- 1. Automatic Timestamp Update Trigger
+-- 2. Timestamp Trigger Function
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -22,10 +23,43 @@ BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public;
 
 -- ----------------------------------------------------------------------------
--- 2. User Profiles & RBAC Helper Function
+-- 3. Core RBAC Architecture: User Roles Table
+-- ----------------------------------------------------------------------------
+-- Authoritative database-controlled role assignments (STUDENT, FACULTY, PUBLISHER, ADMIN, GUEST).
+-- Authorization decisions query this table; client user_metadata is NEVER trusted.
+CREATE TABLE IF NOT EXISTS public.user_roles (
+  id TEXT PRIMARY KEY DEFAULT ('urole_' || gen_random_uuid()),
+  user_id TEXT, -- Supabase auth.users UUID string when linked
+  email TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('GUEST', 'STUDENT', 'FACULTY', 'PUBLISHER', 'ADMIN')),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('PROVISIONED', 'ACTIVE', 'DISABLED')),
+  granted_by TEXT,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  organization TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trigger_user_roles_updated_at
+  BEFORE UPDATE ON public.user_roles
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_email ON public.user_roles(LOWER(TRIM(email)));
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON public.user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_status ON public.user_roles(role, status);
+
+-- Unique index: only 1 ACTIVE entry per email & role
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_roles_unique_active_email_role
+  ON public.user_roles (LOWER(TRIM(email)), role)
+  WHERE status = 'ACTIVE';
+
+-- ----------------------------------------------------------------------------
+-- 4. User Profiles Table
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -43,15 +77,144 @@ CREATE TRIGGER trigger_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
--- Auto-provision profile on Supabase Auth signup
--- Determines role strictly from database authorization (user_roles table or defaults to STUDENT).
--- NEVER trusts client-supplied user_metadata role to prevent privilege escalation.
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(LOWER(TRIM(email)));
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+
+-- ----------------------------------------------------------------------------
+-- 5. Security Helper Functions (SECURITY DEFINER with Safe search_path)
+-- ----------------------------------------------------------------------------
+
+-- Check if current execution context has active ADMIN authorization
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN (
+    -- Service role bypass for backend server/migration tasks
+    (auth.role() = 'service_role')
+    OR
+    -- Database-authoritative check on user_roles table
+    EXISTS (
+      SELECT 1 FROM public.user_roles ur
+      WHERE (ur.user_id = auth.uid()::text OR LOWER(TRIM(ur.email)) = LOWER(TRIM(COALESCE(auth.jwt()->>'email', ''))))
+        AND ur.role = 'ADMIN'
+        AND ur.status = 'ACTIVE'
+    )
+    OR
+    -- Protected app_metadata claim (only writable by service role)
+    (COALESCE(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'ADMIN')
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO authenticated, service_role;
+
+-- Check if current user has an active granted role
+CREATE OR REPLACE FUNCTION public.has_role(check_role TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+  IF public.is_admin() THEN
+    RETURN TRUE;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.user_roles ur
+    WHERE (ur.user_id = auth.uid()::text OR LOWER(TRIM(ur.email)) = LOWER(TRIM(COALESCE(auth.jwt()->>'email', ''))))
+      AND ur.role = UPPER(TRIM(check_role))
+      AND ur.status = 'ACTIVE'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.has_role(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.has_role(TEXT) TO authenticated, service_role;
+
+-- Check if current user is an authorized faculty member
+CREATE OR REPLACE FUNCTION public.is_faculty()
+RETURNS BOOLEAN AS $$
+BEGIN
+  IF public.is_admin() THEN
+    RETURN TRUE;
+  END IF;
+
+  RETURN (
+    public.has_role('FACULTY')
+    OR
+    EXISTS (
+      SELECT 1 FROM public.faculty f
+      WHERE f.auth_user_id = auth.uid()
+        AND f.status = 'ACTIVE'
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.is_faculty() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_faculty() TO authenticated, service_role;
+
+-- Check if current user is an authorized publisher
+CREATE OR REPLACE FUNCTION public.is_publisher(target_pub_id TEXT DEFAULT NULL)
+RETURNS BOOLEAN AS $$
+BEGIN
+  IF public.is_admin() THEN
+    RETURN TRUE;
+  END IF;
+
+  IF target_pub_id IS NOT NULL THEN
+    RETURN EXISTS (
+      SELECT 1 FROM public.publishers p
+      WHERE p.id = target_pub_id
+        AND (p.auth_user_id = auth.uid()::text OR p.user_id = auth.uid()::text)
+        AND p.status = 'ACTIVE'
+    );
+  END IF;
+
+  RETURN (
+    public.has_role('PUBLISHER')
+    OR
+    EXISTS (
+      SELECT 1 FROM public.publishers p
+      WHERE (p.auth_user_id = auth.uid()::text OR p.user_id = auth.uid()::text)
+        AND p.status = 'ACTIVE'
+    )
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public;
+
+REVOKE ALL ON FUNCTION public.is_publisher(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_publisher(TEXT) TO authenticated, service_role;
+
+-- ----------------------------------------------------------------------------
+-- 6. Privilege Escalation Prevention Trigger
+-- ----------------------------------------------------------------------------
+-- Strict database-level boundary: ordinary users CANNOT alter their own role in profiles
+CREATE OR REPLACE FUNCTION public.prevent_profile_role_escalation()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.role IS DISTINCT FROM OLD.role THEN
+    IF NOT public.is_admin() THEN
+      RAISE EXCEPTION 'Privilege escalation rejected: ordinary authenticated users cannot modify their own role.';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trigger_prevent_profile_role_escalation ON public.profiles;
+CREATE TRIGGER trigger_prevent_profile_role_escalation
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW EXECUTE FUNCTION public.prevent_profile_role_escalation();
+
+-- ----------------------------------------------------------------------------
+-- 7. Auth User Provisioning Trigger (auth.users -> profiles + user_roles link)
+-- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   v_initial_role TEXT := 'STUDENT';
 BEGIN
-  -- Look up pre-provisioned role in user_roles if created by an administrator
+  -- Authoritative role assignment: check user_roles table, default to STUDENT
+  -- NEVER trusts client user_metadata to assign elevated privileges
   SELECT role INTO v_initial_role
   FROM public.user_roles
   WHERE LOWER(TRIM(email)) = LOWER(TRIM(NEW.email))
@@ -76,67 +239,37 @@ BEGIN
     email = EXCLUDED.email,
     avatar = COALESCE(EXCLUDED.avatar, profiles.avatar);
 
-  -- Link auth_user_id in user_roles if provisioned by email
+  -- Link auth_user_id in user_roles
   UPDATE public.user_roles
   SET user_id = NEW.id::text, updated_at = NOW()
   WHERE LOWER(TRIM(email)) = LOWER(TRIM(NEW.email)) AND (user_id IS NULL OR user_id = '');
 
-  -- Link auth_user_id in faculty if provisioned by email
+  -- Link auth_user_id in faculty
   UPDATE public.faculty
   SET auth_user_id = NEW.id, status = 'ACTIVE', updated_at = NOW()
   WHERE LOWER(TRIM(email)) = LOWER(TRIM(NEW.email)) AND auth_user_id IS NULL;
 
-  -- Link auth_user_id in students if provisioned by email
+  -- Link auth_user_id in students
   UPDATE public.students
   SET auth_user_id = NEW.id, updated_at = NOW()
   WHERE LOWER(TRIM(institutional_email)) = LOWER(TRIM(NEW.email)) AND auth_user_id IS NULL;
 
-  -- Link auth_user_id in publishers if provisioned by email
+  -- Link auth_user_id in publishers
   UPDATE public.publishers
-  SET auth_user_id = NEW.id, status = 'ACTIVE', updated_at = NOW()
-  WHERE LOWER(TRIM(contact_email)) = LOWER(TRIM(NEW.email)) AND auth_user_id IS NULL;
+  SET auth_user_id = NEW.id::text, status = 'ACTIVE', updated_at = NOW()
+  WHERE LOWER(TRIM(contact_email)) = LOWER(TRIM(NEW.email)) AND (auth_user_id IS NULL OR auth_user_id = '');
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT OR UPDATE ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Secure admin verification function
--- Strictly database-authoritative: checks service role, user_roles table, or profiles table.
--- NEVER trusts user_metadata from client JWTs.
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN (
-    -- Service role bypass for backend Express tasks
-    (auth.role() = 'service_role')
-    OR
-    -- Check user_roles table for ACTIVE ADMIN role
-    EXISTS (
-      SELECT 1 FROM public.user_roles
-      WHERE (user_id = auth.uid()::text OR LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email')))
-        AND role = 'ADMIN'
-        AND status = 'ACTIVE'
-    )
-    OR
-    -- Direct profile role check
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE id = auth.uid() AND role = 'ADMIN'
-    )
-    OR
-    -- Protected app_metadata claim (only writable by service role)
-    (coalesce(auth.jwt() -> 'app_metadata' ->> 'role', '') = 'ADMIN')
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER STABLE;
-
 -- ----------------------------------------------------------------------------
--- 2b. Authoritative Student Records
+-- 8. Authoritative Student Records
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.students (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -153,18 +286,17 @@ CREATE TABLE IF NOT EXISTS public.students (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Database-level uniqueness on normalized institutional email and registration number
+CREATE TRIGGER trigger_students_updated_at
+  BEFORE UPDATE ON public.students
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_students_unique_email ON public.students (LOWER(TRIM(institutional_email)));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_students_unique_reg_number ON public.students (UPPER(TRIM(registration_number)));
 CREATE INDEX IF NOT EXISTS idx_students_auth_user_id ON public.students(auth_user_id) WHERE auth_user_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_students_status ON public.students(status);
 
-CREATE TRIGGER trigger_students_updated_at
-  BEFORE UPDATE ON public.students
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
 -- ----------------------------------------------------------------------------
--- 3. Campus Locations & Buildings
+-- 9. Campus Locations & Buildings
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.locations (
   id TEXT PRIMARY KEY,
@@ -193,7 +325,7 @@ CREATE INDEX IF NOT EXISTS idx_locations_category ON public.locations(category);
 CREATE INDEX IF NOT EXISTS idx_locations_building ON public.locations(building);
 
 -- ----------------------------------------------------------------------------
--- 4. Publishers / Student Chapters & Campus Publishers
+-- 10. Publishers & Student Clubs
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.publishers (
   id TEXT PRIMARY KEY,
@@ -226,47 +358,14 @@ CREATE INDEX IF NOT EXISTS idx_publishers_status ON public.publishers(status);
 CREATE INDEX IF NOT EXISTS idx_publishers_contact_email ON public.publishers(LOWER(TRIM(contact_email)));
 CREATE INDEX IF NOT EXISTS idx_publishers_auth_user_id ON public.publishers(auth_user_id);
 
--- Enforce database uniqueness: max 1 ACTIVE publisher per normalized institutional email
 CREATE UNIQUE INDEX IF NOT EXISTS idx_publishers_unique_active_email
   ON public.publishers (LOWER(TRIM(contact_email)))
   WHERE status = 'ACTIVE';
 
--- ----------------------------------------------------------------------------
--- 4b. User Roles (Centralized Authoritative Multi-Role Capability Records)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.user_roles (
-  id TEXT PRIMARY KEY DEFAULT ('urole_' || gen_random_uuid()),
-  user_id TEXT,
-  email TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('GUEST', 'STUDENT', 'FACULTY', 'PUBLISHER', 'ADMIN')),
-  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('PROVISIONED', 'ACTIVE', 'DISABLED')),
-  granted_by TEXT,
-  granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  revoked_at TIMESTAMPTZ,
-  organization TEXT,
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TRIGGER trigger_user_roles_updated_at
-  BEFORE UPDATE ON public.user_roles
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-CREATE INDEX IF NOT EXISTS idx_user_roles_email ON public.user_roles(LOWER(TRIM(email)));
-CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON public.user_roles(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_roles_role_status ON public.user_roles(role, status);
-
--- Enforce uniqueness: only 1 ACTIVE publisher role record per normalized institutional email
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_roles_unique_active_publisher
-  ON public.user_roles (LOWER(TRIM(email)), role)
-  WHERE status = 'ACTIVE' AND role = 'PUBLISHER';
-
--- Backwards-compatible alias view for any existing 'clubs' query
 CREATE OR REPLACE VIEW public.clubs AS SELECT * FROM public.publishers;
 
 -- ----------------------------------------------------------------------------
--- 5. Campus Events (FKs to publishers and locations)
+-- 11. Campus Events
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.events (
   id TEXT PRIMARY KEY,
@@ -298,7 +397,6 @@ CREATE TABLE IF NOT EXISTS public.events (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Automatically compute event_end_at in Asia/Kolkata (IST, UTC+5:30) if not explicitly set
 CREATE OR REPLACE FUNCTION public.handle_event_end_at()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -333,7 +431,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public;
 
 CREATE TRIGGER trigger_events_end_at
   BEFORE INSERT OR UPDATE ON public.events
@@ -349,8 +447,6 @@ CREATE INDEX IF NOT EXISTS idx_events_publisher_id ON public.events(publisher_id
 CREATE INDEX IF NOT EXISTS idx_events_location_id ON public.events(location_id);
 CREATE INDEX IF NOT EXISTS idx_events_status_approval ON public.events(status, approval_status);
 
--- Authoritative view for active public campus events:
--- Excludes expired, completed, or cancelled events, and filters past end times using server timestamp
 CREATE OR REPLACE VIEW public.active_events AS
 SELECT *
 FROM public.events
@@ -359,7 +455,6 @@ WHERE status NOT IN ('cancelled', 'expired', 'CANCELLED', 'EXPIRED')
   AND (event_end_at IS NULL OR event_end_at > NOW())
 ORDER BY date ASC, event_end_at ASC;
 
--- Server/database automated idempotent cleanup function
 CREATE OR REPLACE FUNCTION public.cleanup_expired_events()
 RETURNS TABLE(cleaned_count INT) AS $$
 DECLARE
@@ -375,10 +470,10 @@ BEGIN
   GET DIAGNOSTICS v_count = ROW_COUNT;
   RETURN QUERY SELECT v_count;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = public;
 
 -- ----------------------------------------------------------------------------
--- 6. Announcements (FK to publishers and optional FK to locations)
+-- 12. Campus Announcements
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.announcements (
   id TEXT PRIMARY KEY,
@@ -392,6 +487,14 @@ CREATE TABLE IF NOT EXISTS public.announcements (
   priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
   action_url TEXT,
   verified BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'approved' CHECK (status IN ('pending', 'approved', 'rejected', 'PENDING', 'APPROVED', 'REJECTED', 'DRAFT', 'PUBLISHED', 'CHANGES_REQUESTED')),
+  author_role TEXT,
+  author_id TEXT,
+  author_email TEXT,
+  author_reg_number TEXT,
+  reviewed_by TEXT,
+  reviewed_at TIMESTAMPTZ,
+  rejection_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -403,9 +506,11 @@ CREATE TRIGGER trigger_announcements_updated_at
 CREATE INDEX IF NOT EXISTS idx_announcements_created_at ON public.announcements(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_announcements_publisher_id ON public.announcements(publisher_id);
 CREATE INDEX IF NOT EXISTS idx_announcements_priority ON public.announcements(priority);
+CREATE INDEX IF NOT EXISTS idx_announcements_status ON public.announcements(status);
+CREATE INDEX IF NOT EXISTS idx_announcements_author_id ON public.announcements(author_id);
 
 -- ----------------------------------------------------------------------------
--- 7. Faculty Directory & Cabin Locator (Admin-Provisioned Architecture)
+-- 13. Faculty Directory
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.faculty (
   id TEXT PRIMARY KEY,
@@ -427,10 +532,10 @@ CREATE TABLE IF NOT EXISTS public.faculty (
   subjects JSONB NOT NULL DEFAULT '[]'::jsonb,
   research_area TEXT,
   directions_guide TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'PROVISIONED' CHECK (status IN ('PROVISIONED', 'ACTIVE', 'DISABLED')),
+  status TEXT NOT NULL DEFAULT 'PROVISIONED' CHECK (status IN ('PROVISIONED', 'ACTIVE', 'DISABLED', 'available', 'in_lecture', 'meeting', 'busy', 'on_leave')),
   live_status TEXT NOT NULL DEFAULT 'available' CHECK (live_status IN ('available', 'in_lecture', 'meeting', 'busy', 'on_leave')),
-  auth_user_id UUID,
-  created_by UUID,
+  auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   avatar_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -440,12 +545,8 @@ CREATE TRIGGER trigger_faculty_updated_at
   BEFORE UPDATE ON public.faculty
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
--- Enforce database-level uniqueness on normalized (lowercase, trimmed) email
 CREATE UNIQUE INDEX IF NOT EXISTS idx_faculty_unique_normalized_email ON public.faculty (LOWER(TRIM(email)));
-
--- Enforce uniqueness on authenticated user identity when claimed
 CREATE UNIQUE INDEX IF NOT EXISTS idx_faculty_unique_auth_user_id ON public.faculty (auth_user_id) WHERE auth_user_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_faculty_building_id ON public.faculty(building_id);
 CREATE INDEX IF NOT EXISTS idx_faculty_cabin ON public.faculty(cabin_number);
 CREATE INDEX IF NOT EXISTS idx_faculty_school ON public.faculty(school);
@@ -453,11 +554,11 @@ CREATE INDEX IF NOT EXISTS idx_faculty_status ON public.faculty(status);
 CREATE INDEX IF NOT EXISTS idx_faculty_live_status ON public.faculty(live_status);
 
 -- ----------------------------------------------------------------------------
--- 7b. Faculty Access Applications (Unprovisioned institutional requests)
+-- 14. Faculty Access Applications
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.faculty_applications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  auth_user_id UUID,
+  auth_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   email TEXT NOT NULL,
   name TEXT NOT NULL,
   department TEXT NOT NULL,
@@ -473,21 +574,20 @@ CREATE TABLE IF NOT EXISTS public.faculty_applications (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Enforce database uniqueness: max 1 active PENDING application per normalized email
-CREATE UNIQUE INDEX IF NOT EXISTS idx_faculty_applications_unique_pending_email
-  ON public.faculty_applications (LOWER(TRIM(email)))
-  WHERE status = 'PENDING';
-
-CREATE INDEX IF NOT EXISTS idx_faculty_applications_email ON public.faculty_applications(email);
-CREATE INDEX IF NOT EXISTS idx_faculty_applications_status ON public.faculty_applications(status);
-CREATE INDEX IF NOT EXISTS idx_faculty_applications_created_at ON public.faculty_applications(created_at DESC);
-
 CREATE TRIGGER trigger_faculty_applications_updated_at
   BEFORE UPDATE ON public.faculty_applications
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_faculty_applications_unique_pending_email
+  ON public.faculty_applications (LOWER(TRIM(email)))
+  WHERE status = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS idx_faculty_applications_email ON public.faculty_applications(LOWER(TRIM(email)));
+CREATE INDEX IF NOT EXISTS idx_faculty_applications_status ON public.faculty_applications(status);
+CREATE INDEX IF NOT EXISTS idx_faculty_applications_created_at ON public.faculty_applications(created_at DESC);
+
 -- ----------------------------------------------------------------------------
--- 7b. Publisher Access Applications (Student & Department Publisher Requests)
+-- 15. Publisher Access Applications
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.publisher_applications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -505,7 +605,10 @@ CREATE TABLE IF NOT EXISTS public.publisher_applications (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Enforce database uniqueness: max 1 active PENDING application per normalized institutional email
+CREATE TRIGGER trigger_publisher_applications_updated_at
+  BEFORE UPDATE ON public.publisher_applications
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_publisher_applications_unique_pending_email
   ON public.publisher_applications (LOWER(TRIM(email)))
   WHERE status = 'PENDING';
@@ -515,12 +618,8 @@ CREATE INDEX IF NOT EXISTS idx_publisher_applications_status ON public.publisher
 CREATE INDEX IF NOT EXISTS idx_publisher_applications_auth_user_id ON public.publisher_applications(auth_user_id);
 CREATE INDEX IF NOT EXISTS idx_publisher_applications_created_at ON public.publisher_applications(created_at DESC);
 
-CREATE TRIGGER trigger_publisher_applications_updated_at
-  BEFORE UPDATE ON public.publisher_applications
-  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
 -- ----------------------------------------------------------------------------
--- 8. Saved Items (Private user bookmarks)
+-- 16. Saved Items (Bookmarks)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.saved_items (
   id TEXT PRIMARY KEY DEFAULT ('saved_' || gen_random_uuid()),
@@ -535,7 +634,7 @@ CREATE INDEX IF NOT EXISTS idx_saved_items_user_id ON public.saved_items(user_id
 CREATE INDEX IF NOT EXISTS idx_saved_items_user_type ON public.saved_items(user_id, item_type);
 
 -- ----------------------------------------------------------------------------
--- 9. Audit Logs (Admin-only, immutable audit trail)
+-- 17. Immutable Audit Logs
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.audit_logs (
   id TEXT PRIMARY KEY DEFAULT ('audit_' || gen_random_uuid()),
@@ -553,7 +652,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
 
 -- ----------------------------------------------------------------------------
--- 10. Campus Guides (Authoritative Reference / Procedures for Campus Hub)
+-- 18. Campus Hub Guides
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.campus_guides (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -577,17 +676,16 @@ CREATE TABLE IF NOT EXISTS public.campus_guides (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_campus_guides_category ON public.campus_guides(category);
-CREATE INDEX IF NOT EXISTS idx_campus_guides_status ON public.campus_guides(status);
-CREATE INDEX IF NOT EXISTS idx_campus_guides_display_order ON public.campus_guides(display_order);
-CREATE INDEX IF NOT EXISTS idx_campus_guides_updated_at ON public.campus_guides(updated_at DESC);
-
 CREATE TRIGGER trigger_campus_guides_updated_at
   BEFORE UPDATE ON public.campus_guides
   FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
+CREATE INDEX IF NOT EXISTS idx_campus_guides_category ON public.campus_guides(category);
+CREATE INDEX IF NOT EXISTS idx_campus_guides_status ON public.campus_guides(status);
+CREATE INDEX IF NOT EXISTS idx_campus_guides_display_order ON public.campus_guides(display_order);
+
 -- ----------------------------------------------------------------------------
--- 11. Campus Guide Attachments (Supabase Storage Metadata)
+-- 19. Campus Guide Attachments
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.campus_guide_attachments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -602,43 +700,74 @@ CREATE TABLE IF NOT EXISTS public.campus_guide_attachments (
 CREATE INDEX IF NOT EXISTS idx_campus_guide_attachments_guide_id ON public.campus_guide_attachments(guide_id);
 
 -- ============================================================================
--- PRODUCTION ROW LEVEL SECURITY (RLS) POLICIES
--- Strict least-privilege policies. ZERO 'FOR ALL USING (true)'
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- Strict least-privilege policies. ZERO blanket 'FOR ALL USING (true)'
 -- ============================================================================
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.publishers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.faculty ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.faculty_applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.publisher_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.saved_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.campus_guides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.campus_guide_attachments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.faculty_applications ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.publisher_applications ENABLE ROW LEVEL SECURITY;
 
--- Explicit table & sequence privileges for PostgREST API roles
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
 
--- 1. Profiles
+-- ----------------------------------------------------------------------------
+-- RLS: 1. Profiles
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Profiles readable by authenticated users"
   ON public.profiles FOR SELECT
   TO authenticated, service_role
   USING (true);
 
-CREATE POLICY "Users can update own profile"
+CREATE POLICY "Users update own profile"
   ON public.profiles FOR UPDATE
   TO authenticated, service_role
   USING (auth.uid() = id)
   WITH CHECK (auth.uid() = id);
 
--- 1b. Students (Authenticated Read, Ownership/Admin Update, Admin Insert/Delete)
+-- ----------------------------------------------------------------------------
+-- RLS: 2. User Roles
+-- ----------------------------------------------------------------------------
+CREATE POLICY "Users read own role authorizations or admin reads all"
+  ON public.user_roles FOR SELECT
+  TO authenticated, anon, service_role
+  USING (
+    (auth.uid() IS NOT NULL AND auth.uid()::text = user_id) OR
+    (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
+    public.is_admin()
+  );
+
+CREATE POLICY "Admin insert user roles"
+  ON public.user_roles FOR INSERT
+  TO authenticated, service_role
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admin update user roles"
+  ON public.user_roles FOR UPDATE
+  TO authenticated, service_role
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admin delete user roles"
+  ON public.user_roles FOR DELETE
+  TO authenticated, service_role
+  USING (public.is_admin());
+
+-- ----------------------------------------------------------------------------
+-- RLS: 3. Students
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Students readable by authenticated users"
   ON public.students FOR SELECT
   TO authenticated, service_role
@@ -650,7 +779,7 @@ CREATE POLICY "Student update own record"
   USING (auth.uid() = auth_user_id OR public.is_admin())
   WITH CHECK (auth.uid() = auth_user_id OR public.is_admin());
 
-CREATE POLICY "Admin manage students"
+CREATE POLICY "Admin insert students"
   ON public.students FOR INSERT
   TO authenticated, service_role
   WITH CHECK (public.is_admin());
@@ -660,7 +789,9 @@ CREATE POLICY "Admin delete students"
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 2. Locations (Public Read, Admin Write)
+-- ----------------------------------------------------------------------------
+-- RLS: 4. Locations
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Public read locations"
   ON public.locations FOR SELECT
   USING (true);
@@ -681,7 +812,9 @@ CREATE POLICY "Admin delete locations"
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 3. Publishers (Public Read, Admin Write)
+-- ----------------------------------------------------------------------------
+-- RLS: 5. Publishers
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Public read publishers"
   ON public.publishers FOR SELECT
   USING (true);
@@ -691,81 +824,184 @@ CREATE POLICY "Admin insert publishers"
   TO authenticated, service_role
   WITH CHECK (public.is_admin());
 
-CREATE POLICY "Admin update publishers"
+CREATE POLICY "Publisher owner or admin update publishers"
   ON public.publishers FOR UPDATE
   TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
+  USING (public.is_admin() OR auth.uid()::text = user_id OR auth.uid()::text = auth_user_id)
+  WITH CHECK (public.is_admin() OR auth.uid()::text = user_id OR auth.uid()::text = auth_user_id);
 
 CREATE POLICY "Admin delete publishers"
   ON public.publishers FOR DELETE
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 4. Events (Public Read Approved, Admin Write)
-CREATE POLICY "Read approved events"
+-- ----------------------------------------------------------------------------
+-- RLS: 6. Events
+-- ----------------------------------------------------------------------------
+CREATE POLICY "Read approved events or owned"
   ON public.events FOR SELECT
-  USING (approval_status = 'approved' OR public.is_admin());
+  USING (
+    approval_status = 'approved'
+    OR public.is_admin()
+    OR public.is_publisher(publisher_id)
+  );
 
-CREATE POLICY "Admin insert events"
+CREATE POLICY "Authorized publisher or admin insert events"
   ON public.events FOR INSERT
   TO authenticated, service_role
-  WITH CHECK (public.is_admin());
+  WITH CHECK (public.is_admin() OR public.is_publisher(publisher_id));
 
-CREATE POLICY "Admin update events"
+CREATE POLICY "Authorized publisher or admin update events"
   ON public.events FOR UPDATE
   TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
+  USING (public.is_admin() OR public.is_publisher(publisher_id))
+  WITH CHECK (public.is_admin() OR public.is_publisher(publisher_id));
 
 CREATE POLICY "Admin delete events"
   ON public.events FOR DELETE
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 5. Announcements (Public Read, Admin Write)
-CREATE POLICY "Public read announcements"
+-- ----------------------------------------------------------------------------
+-- RLS: 7. Announcements
+-- ----------------------------------------------------------------------------
+CREATE POLICY "Read announcements"
   ON public.announcements FOR SELECT
-  USING (true);
+  USING (
+    verified = true
+    OR status IN ('approved', 'PUBLISHED')
+    OR public.is_admin()
+    OR (auth.uid() IS NOT NULL AND auth.uid()::text = author_id)
+  );
 
-CREATE POLICY "Admin insert announcements"
+CREATE POLICY "Insert announcements"
   ON public.announcements FOR INSERT
   TO authenticated, service_role
-  WITH CHECK (public.is_admin());
+  WITH CHECK (
+    public.is_admin()
+    OR public.is_publisher(publisher_id)
+    OR (
+      auth.uid() IS NOT NULL
+      AND auth.uid()::text = author_id
+      AND status IN ('pending', 'DRAFT', 'PENDING_REVIEW')
+    )
+  );
 
-CREATE POLICY "Admin update announcements"
+CREATE POLICY "Update announcements"
   ON public.announcements FOR UPDATE
   TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
+  USING (
+    public.is_admin()
+    OR public.is_publisher(publisher_id)
+    OR (
+      auth.uid() IS NOT NULL
+      AND auth.uid()::text = author_id
+      AND status IN ('pending', 'DRAFT', 'CHANGES_REQUESTED')
+    )
+  )
+  WITH CHECK (
+    public.is_admin()
+    OR public.is_publisher(publisher_id)
+    OR (
+      auth.uid() IS NOT NULL
+      AND auth.uid()::text = author_id
+      AND status IN ('pending', 'DRAFT', 'PENDING_REVIEW')
+    )
+  );
 
 CREATE POLICY "Admin delete announcements"
   ON public.announcements FOR DELETE
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 6. Faculty (Public Read, Admin Write)
+-- ----------------------------------------------------------------------------
+-- RLS: 8. Faculty Directory
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Public read faculty"
   ON public.faculty FOR SELECT
-  USING (true);
+  USING (status <> 'DISABLED' OR public.is_admin());
 
 CREATE POLICY "Admin insert faculty"
   ON public.faculty FOR INSERT
   TO authenticated, service_role
   WITH CHECK (public.is_admin());
 
-CREATE POLICY "Admin update faculty"
+CREATE POLICY "Faculty update own record or admin"
   ON public.faculty FOR UPDATE
   TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
+  USING (auth.uid() = auth_user_id OR public.is_admin())
+  WITH CHECK (auth.uid() = auth_user_id OR public.is_admin());
 
 CREATE POLICY "Admin delete faculty"
   ON public.faculty FOR DELETE
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 7. Saved Items (Strict User Isolation)
+-- ----------------------------------------------------------------------------
+-- RLS: 9. Faculty Applications
+-- ----------------------------------------------------------------------------
+CREATE POLICY "Read own faculty applications or admin"
+  ON public.faculty_applications FOR SELECT
+  TO authenticated, anon, service_role
+  USING (
+    (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR
+    (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
+    public.is_admin()
+  );
+
+CREATE POLICY "Authenticated users submit faculty application"
+  ON public.faculty_applications FOR INSERT
+  TO authenticated, service_role
+  WITH CHECK (
+    auth.uid() = auth_user_id
+    AND status = 'PENDING'
+  );
+
+CREATE POLICY "Admin update faculty applications"
+  ON public.faculty_applications FOR UPDATE
+  TO authenticated, service_role
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admin delete faculty applications"
+  ON public.faculty_applications FOR DELETE
+  TO authenticated, service_role
+  USING (public.is_admin());
+
+-- ----------------------------------------------------------------------------
+-- RLS: 10. Publisher Applications
+-- ----------------------------------------------------------------------------
+CREATE POLICY "Read own publisher applications or admin"
+  ON public.publisher_applications FOR SELECT
+  TO authenticated, anon, service_role
+  USING (
+    (auth.uid() IS NOT NULL AND auth.uid()::text = auth_user_id) OR
+    (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
+    public.is_admin()
+  );
+
+CREATE POLICY "Authenticated students submit publisher application"
+  ON public.publisher_applications FOR INSERT
+  TO authenticated, service_role
+  WITH CHECK (
+    auth.uid()::text = auth_user_id
+    AND status = 'PENDING'
+  );
+
+CREATE POLICY "Admin update publisher applications"
+  ON public.publisher_applications FOR UPDATE
+  TO authenticated, service_role
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
+CREATE POLICY "Admin delete publisher applications"
+  ON public.publisher_applications FOR DELETE
+  TO authenticated, service_role
+  USING (public.is_admin());
+
+-- ----------------------------------------------------------------------------
+-- RLS: 11. Saved Items (Strict User Isolation)
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Users read own saved items"
   ON public.saved_items FOR SELECT
   TO authenticated, service_role
@@ -781,20 +1017,24 @@ CREATE POLICY "Users delete own saved items"
   TO authenticated, service_role
   USING (auth.uid()::text = user_id OR public.is_admin());
 
--- 8. Audit Logs (Admin-Only Read, Backend/Admin Insert, Tamper-Proof)
+-- ----------------------------------------------------------------------------
+-- RLS: 12. Audit Logs (Tamper-Proof, Append-Only)
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Admin read audit logs"
   ON public.audit_logs FOR SELECT
   TO authenticated, service_role
   USING (public.is_admin());
 
-CREATE POLICY "Admin insert audit logs"
+CREATE POLICY "Log audit actions"
   ON public.audit_logs FOR INSERT
   TO authenticated, service_role
-  WITH CHECK (public.is_admin());
+  WITH CHECK (public.is_admin() OR auth.uid()::text = user_id);
 
--- Note: No UPDATE or DELETE policies on audit_logs (immutable append-only)
+-- Note: No UPDATE or DELETE policies on audit_logs (strictly immutable)
 
--- 9. Campus Guides (Public Read for Published, Admin-Only for Draft/Archived/Mutation)
+-- ----------------------------------------------------------------------------
+-- RLS: 13. Campus Guides
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Public read published guides"
   ON public.campus_guides FOR SELECT
   TO anon, authenticated, service_role
@@ -816,7 +1056,9 @@ CREATE POLICY "Admin delete guides"
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 10. Campus Guide Attachments (Public Read for Published Parent Guides, Admin-Only Mutation)
+-- ----------------------------------------------------------------------------
+-- RLS: 14. Campus Guide Attachments
+-- ----------------------------------------------------------------------------
 CREATE POLICY "Public read guide attachments"
   ON public.campus_guide_attachments FOR SELECT
   TO anon, authenticated, service_role
@@ -843,78 +1085,8 @@ CREATE POLICY "Admin delete guide attachments"
   TO authenticated, service_role
   USING (public.is_admin());
 
--- 11. Faculty Applications Policies
-CREATE POLICY "Users read own applications or admin reads all"
-  ON public.faculty_applications FOR SELECT
-  TO authenticated, anon, service_role
-  USING (
-    (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR
-    (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
-    public.is_admin()
-  );
-
-CREATE POLICY "Authenticated or institutional users insert applications"
-  ON public.faculty_applications FOR INSERT
-  TO authenticated, anon, service_role
-  WITH CHECK (true);
-
-CREATE POLICY "Admin update applications"
-  ON public.faculty_applications FOR UPDATE
-  TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
-
-CREATE POLICY "Admin delete applications"
-  ON public.faculty_applications FOR DELETE
-  TO authenticated, service_role
-  USING (public.is_admin());
-
--- 12. Publisher Applications Policies
-CREATE POLICY "Users read own publisher applications or admin reads all"
-  ON public.publisher_applications FOR SELECT
-  TO authenticated, anon, service_role
-  USING (
-    (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR
-    (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
-    public.is_admin()
-  );
-
-CREATE POLICY "Authenticated students insert publisher applications"
-  ON public.publisher_applications FOR INSERT
-  TO authenticated, anon, service_role
-  WITH CHECK (true);
-
-CREATE POLICY "Admin update publisher applications"
-  ON public.publisher_applications FOR UPDATE
-  TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
-
-CREATE POLICY "Admin delete publisher applications"
-  ON public.publisher_applications FOR DELETE
-  TO authenticated, service_role
-  USING (public.is_admin());
-
--- 13. User Roles Policies
-CREATE POLICY "Users read own role authorizations or admin reads all"
-  ON public.user_roles FOR SELECT
-  TO authenticated, anon, service_role
-  USING (
-    (auth.uid() IS NOT NULL AND auth.uid() = user_id) OR
-    (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
-    public.is_admin()
-  );
-
-CREATE POLICY "Admin manage user roles"
-  ON public.user_roles FOR ALL
-  TO authenticated, service_role
-  USING (public.is_admin())
-  WITH CHECK (public.is_admin());
-
 -- ============================================================================
 -- SUPABASE REALTIME CONFIGURATION
--- Replica Identity FULL enables DELETE payloads to carry previous IDs
--- Only tables requiring live multi-user synchronization are published
 -- ============================================================================
 
 ALTER TABLE public.locations REPLICA IDENTITY FULL;
@@ -949,8 +1121,9 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.publisher_applications;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.user_roles;
 
 -- ============================================================================
--- SUPABASE STORAGE: EVENT POSTERS & CAMPUS GUIDES BUCKETS & POLICIES
+-- SUPABASE STORAGE BUCKETS & POLICIES
 -- ============================================================================
+
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES 
   ('event-posters', 'event-posters', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp']),
@@ -960,26 +1133,58 @@ ON CONFLICT (id) DO UPDATE SET
   file_size_limit = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- Public can read posters from event-posters bucket
 CREATE POLICY "Public read event posters"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'event-posters');
 
--- Authenticated publishers/admins can upload event posters
 CREATE POLICY "Authorized upload event posters"
   ON storage.objects FOR INSERT
-  TO authenticated, anon, service_role
-  WITH CHECK (bucket_id = 'event-posters');
+  TO authenticated, service_role
+  WITH CHECK (
+    bucket_id = 'event-posters'
+    AND (public.is_admin() OR public.has_role('PUBLISHER'))
+  );
 
--- Authorized users can update event posters
 CREATE POLICY "Authorized update event posters"
   ON storage.objects FOR UPDATE
-  TO authenticated, anon, service_role
-  USING (bucket_id = 'event-posters');
+  TO authenticated, service_role
+  USING (
+    bucket_id = 'event-posters'
+    AND (public.is_admin() OR public.has_role('PUBLISHER'))
+  );
 
--- Authorized users or admins can delete event posters
 CREATE POLICY "Authorized delete event posters"
   ON storage.objects FOR DELETE
-  TO authenticated, anon, service_role
-  USING (bucket_id = 'event-posters');
+  TO authenticated, service_role
+  USING (
+    bucket_id = 'event-posters'
+    AND (public.is_admin() OR public.has_role('PUBLISHER'))
+  );
 
+CREATE POLICY "Public read campus guide files"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'campus-guides');
+
+CREATE POLICY "Admin upload campus guide files"
+  ON storage.objects FOR INSERT
+  TO authenticated, service_role
+  WITH CHECK (
+    bucket_id = 'campus-guides'
+    AND public.is_admin()
+  );
+
+CREATE POLICY "Admin update campus guide files"
+  ON storage.objects FOR UPDATE
+  TO authenticated, service_role
+  USING (
+    bucket_id = 'campus-guides'
+    AND public.is_admin()
+  );
+
+CREATE POLICY "Admin delete campus guide files"
+  ON storage.objects FOR DELETE
+  TO authenticated, service_role
+  USING (
+    bucket_id = 'campus-guides'
+    AND public.is_admin()
+  );

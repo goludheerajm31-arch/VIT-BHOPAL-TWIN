@@ -1,9 +1,31 @@
 -- ============================================================================
--- VIT Bhopal Digital Campus Twin: Production Seed Data
+-- VIT Bhopal Digital Campus Twin: Authoritative Production Seed Data
 -- Strict Foreign Key Ordering: Locations & Publishers -> Events, Faculty, Announcements
 -- ============================================================================
 
--- 1. Campus Locations & Buildings
+-- ----------------------------------------------------------------------------
+-- 1. Initial Authoritative RBAC User Roles
+-- ----------------------------------------------------------------------------
+INSERT INTO public.user_roles (id, email, role, status, organization, notes)
+VALUES
+  ('urole-admin', 'admin@vitbhopal.ac.in', 'ADMIN', 'ACTIVE', 'Office of IT & Campus Governance', 'Permanent Master Administrator'),
+  ('urole-fac-demo', 'faculty.demo@vitbhopal.ac.in', 'FACULTY', 'ACTIVE', 'School of Computing Science & Engineering', 'Demo Faculty Account'),
+  ('urole-pub-demo', 'publisher.demo@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'Authorized Student Organization', 'Demo Publisher Account'),
+  ('urole-stu-demo', 'student.demo@vitbhopal.ac.in', 'STUDENT', 'ACTIVE', 'Student Body', 'Demo Student Account'),
+  ('urole-ai-club', 'aiclub@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'AI & ML Club', 'Student Chapter'),
+  ('urole-e-cell', 'e-cell@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'Innovation & Entrepreneurship Cell', 'Student Chapter'),
+  ('urole-dev-soc', 'devsociety@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'Developer Student Society', 'Student Chapter'),
+  ('urole-cultural', 'culturalguild@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'Cultural & Performing Arts Guild', 'Student Chapter'),
+  ('urole-sports', 'sports@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'VITB Sports Council', 'Sports Governing Body'),
+  ('urole-campus-adm', 'campus@vitbhopal.ac.in', 'PUBLISHER', 'ACTIVE', 'Campus Administration', 'Controller of Examinations')
+ON CONFLICT (id) DO UPDATE SET
+  role = EXCLUDED.role,
+  status = EXCLUDED.status,
+  updated_at = NOW();
+
+-- ----------------------------------------------------------------------------
+-- 2. Campus Locations & Buildings
+-- ----------------------------------------------------------------------------
 INSERT INTO public.locations (id, name, category, description, latitude, longitude, building, floor, facilities, opening_hours, accessibility, image, zone, contact_phone)
 VALUES
 ('loc-ab-1', 'VITB Academic Block 1', 'Buildings', 'VITB Academic Block 1: Main academic block housing lecture theatres, dean offices, faculty cabins, central auditorium, seminar halls, and high-performance computing labs.', 23.077636, 76.851518, 'VITB Academic Block 1', 'Ground to 4th Floor', '["Smart Classrooms", "Faculty Cabins", "Auditorium Hall", "Seminar Hall", "Advanced Computing Labs", "Elevators", "RO Drinking Water"]'::jsonb, '08:00 AM – 08:30 PM', 'Dual elevators, wheelchair ramps, accessible restrooms on all floors', 'https://images.unsplash.com/photo-1562774053-701939374585?w=1200&auto=format&fit=crop&q=80', 'Academic Precinct', '+91 7560 254510'),
@@ -26,7 +48,9 @@ ON CONFLICT (id) DO UPDATE SET
   image = EXCLUDED.image,
   updated_at = NOW();
 
--- 2. Publishers / Student Clubs
+-- ----------------------------------------------------------------------------
+-- 3. Publishers / Student Clubs
+-- ----------------------------------------------------------------------------
 INSERT INTO public.publishers (id, user_id, organization_name, category, description, logo_url, verified, contact_email, department)
 VALUES
 ('pub-ai-club', 'user-publisher', 'AI & ML Club', 'Technical', 'Official student chapter fostering machine learning research, Kaggle hackathons, and industry mentorship.', 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=150&auto=format&fit=crop&q=80', true, 'aiclub@vitbhopal.ac.in', 'School of Computing Science'),
@@ -42,7 +66,9 @@ ON CONFLICT (id) DO UPDATE SET
   contact_email = EXCLUDED.contact_email,
   updated_at = NOW();
 
--- 3. Campus Events (FKs: publisher_id -> publishers.id, location_id -> locations.id)
+-- ----------------------------------------------------------------------------
+-- 4. Campus Events (FKs: publisher_id -> publishers.id, location_id -> locations.id)
+-- ----------------------------------------------------------------------------
 INSERT INTO public.events (id, title, subtitle, description, organizer, publisher_id, location_id, location_name, venue_detail, date, start_time, end_time, category, verified, cover_image, capacity, status, approval_status, tags)
 VALUES
 ('evt-001', 'Advitya Hackathon 2026', 'National 36-Hour Hackathon', 'Annual national-level collegiate hackathon featuring Tracks in Generative AI, Web3, Smart Cities, and Robotics.', 'AI & ML Club', 'pub-ai-club', 'loc-ab-1', 'VITB Academic Block 1', 'Main Auditorium & CS Labs', '2026-09-12', '09:00 AM', '09:00 PM', 'Technical', true, 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=1200&auto=format&fit=crop&q=80', 500, 'upcoming', 'approved', '["Hackathon", "AI", "Coding", "PrizePool"]'::jsonb),
@@ -59,32 +85,38 @@ ON CONFLICT (id) DO UPDATE SET
   tags = EXCLUDED.tags,
   updated_at = NOW();
 
--- 4. Faculty Directory (FK: building_id -> locations.id)
-INSERT INTO public.faculty (id, name, prefix, designation, school, department_name, cabin_number, building_id, building_name, floor, wing, room_details, email, phone, consultation_hours, subjects, research_area, directions_guide, status)
+-- ----------------------------------------------------------------------------
+-- 5. Faculty Directory (FK: building_id -> locations.id)
+-- ----------------------------------------------------------------------------
+INSERT INTO public.faculty (id, name, prefix, designation, school, department_name, cabin_number, building_id, building_name, floor, wing, room_details, email, phone, consultation_hours, subjects, research_area, directions_guide, status, live_status)
 VALUES
-('fac-dr-sharma', 'Dr. Rajesh Sharma', 'Dr.', 'Professor & Dean', 'SCSE', 'Computer Science and Engineering', 'AB1-314', 'loc-ab-1', 'VITB Academic Block 1', '3rd Floor', 'Wing A (North Corridor)', 'Cabin 314, Senior Faculty Wing adjacent to Dean Suite', 'rajesh.sharma@vitbhopal.ac.in', '+91 7560 254601', 'Mon, Wed: 03:00 PM – 05:00 PM', '["Advanced Algorithms", "Distributed Systems", "Cloud Computing"]'::jsonb, 'High-Performance Computing and Cloud Architecture', 'Take North Elevator at AB-1 to Floor 3, turn left past HOD Office; Cabin 314 is on the left corridor.', 'available'),
-('fac-dr-patel', 'Dr. Neha Patel', 'Dr.', 'Associate Professor', 'SCSE', 'Artificial Intelligence & Data Science', 'AB1-204', 'loc-ab-1', 'VITB Academic Block 1', '2nd Floor', 'Wing B (East Corridor)', 'Cabin 204, AI Lab Corridor', 'neha.patel@vitbhopal.ac.in', '+91 7560 254602', 'Tue, Thu: 02:00 PM – 04:00 PM', '["Deep Learning", "Natural Language Processing", "Machine Learning"]'::jsonb, 'Multimodal Generative Models and Low-Resource NLP', 'Take Central Staircase to Floor 2, enter East Corridor; Cabin 204 is opposite the High-Performance AI Lab.', 'available'),
-('fac-dr-verma', 'Dr. Amit Verma', 'Dr.', 'Professor & HOD', 'SEEE', 'Electrical & Electronics Engineering', 'AB1-105', 'loc-ab-1', 'VITB Academic Block 1', '1st Floor', 'Wing C (South Corridor)', 'Cabin 105, HOD Chamber SEEE', 'amit.verma@vitbhopal.ac.in', '+91 7560 254603', 'Daily: 11:00 AM – 12:30 PM', '["VLSI Design", "Embedded Systems", "IoT Architecture"]'::jsonb, 'Ultra-Low Power VLSI circuits and Edge Computing', 'Enter main portico of AB-1, proceed through South Corridor on Ground/1st Floor, Cabin 105 is the second door on right.', 'available'),
-('fac-dr-iyer', 'Dr. Priya Iyer', 'Dr.', 'Assistant Professor (Sr.)', 'SASL', 'Mathematics & Computing', 'AB1-412', 'loc-ab-1', 'VITB Academic Block 1', '4th Floor', 'Wing A (West Corridor)', 'Cabin 412, Mathematics Faculty Cluster', 'priya.iyer@vitbhopal.ac.in', '+91 7560 254604', 'Mon, Fri: 10:00 AM – 12:00 PM', '["Linear Algebra", "Optimization Techniques", "Graph Theory"]'::jsonb, 'Combinatorial Optimization and Algorithmic Graph Theory', 'Take South Elevator to Floor 4, turn right into West Corridor, Cabin 412 is midway along the quiet study bay.', 'available'),
-('fac-dr-khan', 'Dr. Tariq Khan', 'Dr.', 'Associate Professor', 'SMEC', 'Mechanical Engineering', 'AB2-218', 'loc-ab-2', 'VITB Academic Block 2', '2nd Floor', 'Wing B', 'Cabin 218, Mechatronics Wing', 'tariq.khan@vitbhopal.ac.in', '+91 7560 254605', 'Wed, Thu: 02:30 PM – 04:30 PM', '["Thermodynamics", "Robotics & Automation", "Fluid Dynamics"]'::jsonb, 'Autonomous Mobile Robotics and Swarm Intelligence', 'Enter AB-2 through main foyer, take elevator to 2nd Floor, follow Mechatronics signs to Cabin 218.', 'available')
+('fac-dr-sharma', 'Dr. Rajesh Sharma', 'Dr.', 'Professor & Dean', 'SCSE', 'Computer Science and Engineering', 'AB1-314', 'loc-ab-1', 'VITB Academic Block 1', '3rd Floor', 'Wing A (North Corridor)', 'Cabin 314, Senior Faculty Wing adjacent to Dean Suite', 'rajesh.sharma@vitbhopal.ac.in', '+91 7560 254601', 'Mon, Wed: 03:00 PM – 05:00 PM', '["Advanced Algorithms", "Distributed Systems", "Cloud Computing"]'::jsonb, 'High-Performance Computing and Cloud Architecture', 'Take North Elevator at AB-1 to Floor 3, turn left past HOD Office; Cabin 314 is on the left corridor.', 'ACTIVE', 'available'),
+('fac-dr-patel', 'Dr. Neha Patel', 'Dr.', 'Associate Professor', 'SCSE', 'Artificial Intelligence & Data Science', 'AB1-204', 'loc-ab-1', 'VITB Academic Block 1', '2nd Floor', 'Wing B (East Corridor)', 'Cabin 204, AI Lab Corridor', 'neha.patel@vitbhopal.ac.in', '+91 7560 254602', 'Tue, Thu: 02:00 PM – 04:00 PM', '["Deep Learning", "Natural Language Processing", "Machine Learning"]'::jsonb, 'Multimodal Generative Models and Low-Resource NLP', 'Take Central Staircase to Floor 2, enter East Corridor; Cabin 204 is opposite the High-Performance AI Lab.', 'ACTIVE', 'available'),
+('fac-dr-verma', 'Dr. Amit Verma', 'Dr.', 'Professor & HOD', 'SEEE', 'Electrical & Electronics Engineering', 'AB1-105', 'loc-ab-1', 'VITB Academic Block 1', '1st Floor', 'Wing C (South Corridor)', 'Cabin 105, HOD Chamber SEEE', 'amit.verma@vitbhopal.ac.in', '+91 7560 254603', 'Daily: 11:00 AM – 12:30 PM', '["VLSI Design", "Embedded Systems", "IoT Architecture"]'::jsonb, 'Ultra-Low Power VLSI circuits and Edge Computing', 'Enter main portico of AB-1, proceed through South Corridor on Ground/1st Floor, Cabin 105 is the second door on right.', 'ACTIVE', 'available'),
+('fac-dr-iyer', 'Dr. Priya Iyer', 'Dr.', 'Assistant Professor (Sr.)', 'SASL', 'Mathematics & Computing', 'AB1-412', 'loc-ab-1', 'VITB Academic Block 1', '4th Floor', 'Wing A (West Corridor)', 'Cabin 412, Mathematics Faculty Cluster', 'priya.iyer@vitbhopal.ac.in', '+91 7560 254604', 'Mon, Fri: 10:00 AM – 12:00 PM', '["Linear Algebra", "Optimization Techniques", "Graph Theory"]'::jsonb, 'Combinatorial Optimization and Algorithmic Graph Theory', 'Take South Elevator to Floor 4, turn right into West Corridor, Cabin 412 is midway along the quiet study bay.', 'ACTIVE', 'available'),
+('fac-dr-khan', 'Dr. Tariq Khan', 'Dr.', 'Associate Professor', 'SMEC', 'Mechanical Engineering', 'AB2-218', 'loc-ab-2', 'VITB Academic Block 2', '2nd Floor', 'Wing B', 'Cabin 218, Mechatronics Wing', 'tariq.khan@vitbhopal.ac.in', '+91 7560 254605', 'Wed, Thu: 02:30 PM – 04:30 PM', '["Thermodynamics", "Robotics & Automation", "Fluid Dynamics"]'::jsonb, 'Autonomous Mobile Robotics and Swarm Intelligence', 'Enter AB-2 through main foyer, take elevator to 2nd Floor, follow Mechatronics signs to Cabin 218.', 'ACTIVE', 'available')
 ON CONFLICT (id) DO UPDATE SET
   name = EXCLUDED.name,
   designation = EXCLUDED.designation,
   status = EXCLUDED.status,
+  live_status = EXCLUDED.live_status,
   consultation_hours = EXCLUDED.consultation_hours,
   directions_guide = EXCLUDED.directions_guide,
   updated_at = NOW();
 
--- 5. Campus Announcements (FKs: publisher_id -> publishers.id, location_id -> locations.id)
-INSERT INTO public.announcements (id, title, description, publisher_id, publisher_name, location_id, location_name, category, priority, action_url, verified)
+-- ----------------------------------------------------------------------------
+-- 6. Campus Announcements (FKs: publisher_id -> publishers.id, location_id -> locations.id)
+-- ----------------------------------------------------------------------------
+INSERT INTO public.announcements (id, title, description, publisher_id, publisher_name, location_id, location_name, category, priority, action_url, verified, status)
 VALUES
-('ann-001', 'Mid-Term Examination Hall Allocations Released', 'Students of all schools (SCSE, SEEE, SMEC, SASL) can now verify their designated examination halls and seat numbers in the portal.', 'pub-campus', 'Office of the Controller of Examinations', 'loc-ab-1', 'VITB Academic Block 1', 'Academics', 'urgent', '/events', true),
-('ann-002', 'Annual Sports Fest Registration Open', 'Badminton, basketball, football, and athletics team registrations are now accepting entries at the Multi-Purpose Hall sports desk.', 'pub-sports-council', 'VITB Sports Council', 'loc-mph', 'Multi-purpose Hall', 'Sports', 'high', '/events/evt-002', true),
-('ann-003', 'Advitya Hackathon 2026 Tracks & Mentors Announced', 'Problem statements for Generative AI and Autonomous Robotics tracks have been published. Join the orientation session in Seminar Hall.', 'pub-ai-club', 'AI & ML Club', 'loc-ab-1', 'VITB Academic Block 1', 'Technical', 'medium', '/events/evt-001', true)
+('ann-001', 'Mid-Term Examination Hall Allocations Released', 'Students of all schools (SCSE, SEEE, SMEC, SASL) can now verify their designated examination halls and seat numbers in the portal.', 'pub-campus', 'Office of the Controller of Examinations', 'loc-ab-1', 'VITB Academic Block 1', 'Academics', 'urgent', '/events', true, 'approved'),
+('ann-002', 'Annual Sports Fest Registration Open', 'Badminton, basketball, football, and athletics team registrations are now accepting entries at the Multi-Purpose Hall sports desk.', 'pub-sports-council', 'VITB Sports Council', 'loc-mph', 'Multi-purpose Hall', 'Sports', 'high', '/events/evt-002', true, 'approved'),
+('ann-003', 'Advitya Hackathon 2026 Tracks & Mentors Announced', 'Problem statements for Generative AI and Autonomous Robotics tracks have been published. Join the orientation session in Seminar Hall.', 'pub-ai-club', 'AI & ML Club', 'loc-ab-1', 'VITB Academic Block 1', 'Technical', 'medium', '/events/evt-001', true, 'approved')
 ON CONFLICT (id) DO UPDATE SET
   title = EXCLUDED.title,
   description = EXCLUDED.description,
   priority = EXCLUDED.priority,
   action_url = EXCLUDED.action_url,
   verified = EXCLUDED.verified,
+  status = EXCLUDED.status,
   updated_at = NOW();

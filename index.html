@@ -13,22 +13,107 @@
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script>
-      // Ignore WebSocket and HMR errors in iframe environment
-      window.addEventListener('unhandledrejection', function(event) {
-        var reason = event && event.reason;
-        var msg = (reason && reason.message) || String(reason || '');
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite:ws') !== -1 || msg.indexOf('closed without opened') !== -1) {
-          event.preventDefault();
-          event.stopPropagation();
+      // 1. Mock WebSocket for Vite HMR in iframe/dev server environment where HMR is disabled
+      (function() {
+        var NativeWebSocket = window.WebSocket;
+        if (NativeWebSocket) {
+          function MockViteWebSocket(url, protocols) {
+            var isVite = false;
+            if (protocols === 'vite-hmr' || protocols === 'vite-ping') isVite = true;
+            if (Array.isArray(protocols) && (protocols.indexOf('vite-hmr') !== -1 || protocols.indexOf('vite-ping') !== -1)) isVite = true;
+            if (typeof url === 'string' && (url.indexOf('token=') !== -1 || url.indexOf('vite') !== -1)) isVite = true;
+
+            if (!isVite) {
+              return new NativeWebSocket(url, protocols);
+            }
+
+            var listeners = {};
+            var self = {
+              url: url,
+              readyState: 1, // WebSocket.OPEN
+              OPEN: 1,
+              CLOSED: 3,
+              CLOSING: 2,
+              CONNECTING: 0,
+              protocol: typeof protocols === 'string' ? protocols : '',
+              bufferedAmount: 0,
+              extensions: '',
+              binaryType: 'blob',
+              onopen: null,
+              onclose: null,
+              onerror: null,
+              onmessage: null,
+              addEventListener: function(type, listener) {
+                listeners[type] = listeners[type] || [];
+                listeners[type].push(listener);
+              },
+              removeEventListener: function(type, listener) {
+                if (!listeners[type]) return;
+                listeners[type] = listeners[type].filter(function(l) { return l !== listener; });
+              },
+              dispatchEvent: function(event) {
+                var fns = listeners[event.type] || [];
+                fns.forEach(function(fn) {
+                  try { fn.call(self, event); } catch (e) {}
+                });
+                return true;
+              },
+              send: function() {},
+              close: function() {
+                self.readyState = 3;
+              }
+            };
+
+            setTimeout(function() {
+              if (typeof self.onopen === 'function') {
+                try { self.onopen({ type: 'open', target: self }); } catch (e) {}
+              }
+            }, 0);
+
+            return self;
+          }
+
+          MockViteWebSocket.prototype = NativeWebSocket.prototype;
+          MockViteWebSocket.CONNECTING = 0;
+          MockViteWebSocket.OPEN = 1;
+          MockViteWebSocket.CLOSING = 2;
+          MockViteWebSocket.CLOSED = 3;
+
+          window.WebSocket = MockViteWebSocket;
         }
-      });
-      window.addEventListener('error', function(event) {
-        var msg = (event && event.message) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite:ws') !== -1) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      });
+
+        // 2. Global error & unhandled rejection suppression for Vite HMR in iframe
+        window.addEventListener('unhandledrejection', function(event) {
+          var reason = event && event.reason;
+          var msg = (reason && reason.message) || String(reason || '');
+          var stack = (reason && reason.stack) || '';
+          if (
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('vite:ws') !== -1 ||
+            msg.indexOf('closed without opened') !== -1 ||
+            stack.indexOf('@vite/client') !== -1
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          }
+        });
+
+        window.addEventListener('error', function(event) {
+          var msg = (event && event.message) || '';
+          var file = (event && event.filename) || '';
+          if (
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('vite:ws') !== -1 ||
+            msg.indexOf('closed without opened') !== -1 ||
+            file.indexOf('@vite/client') !== -1
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
     </script>
   </head>
   <body class="bg-[#F5F5F7] text-[#1D1D1F] antialiased selection:bg-[#0071E3] selection:text-white">
