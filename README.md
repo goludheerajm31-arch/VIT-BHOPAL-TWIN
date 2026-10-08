@@ -1,28 +1,29 @@
 # VIT Bhopal Digital Twin 🏛️✨
 
 > **One VIT Bhopal. One digital experience.**  
-> A next-generation smart campus digital twin platform combining interactive GIS maps, indoor cabin navigation, live verified events, faculty directories, real-time broadcasts, role-based workflows, and Gemini AI assistance.
+> A next-generation smart campus digital twin platform combining interactive GIS maps, indoor cabin navigation, live verified events, faculty directories, real-time broadcasts, multi-role workflows, Supabase backend infrastructure, and Google OAuth integration.
 
-🌐 **Live Application:** [https://vitbhopalcampus.vercel.app](https://vitbhopalcampus.vercel.app)
+🌐 **Live Application:** [https://vitcampus-kappa.vercel.app](https://vitcampus-kappa.vercel.app)  
+📦 **Repository:** [https://github.com/goludheerajm31-arch/VIT-BHOPAL-TWIN](https://github.com/goludheerajm31-arch/VIT-BHOPAL-TWIN)
 
-[![Live Demo](https://img.shields.io/badge/Demo-vitbhopalcampus.vercel.app-000000?style=flat-square&logo=vercel)](https://vitbhopalcampus.vercel.app)
+[![Live Demo](https://img.shields.io/badge/Vercel-vitcampus--kappa.vercel.app-000000?style=flat-square&logo=vercel)](https://vitcampus-kappa.vercel.app)
 [![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-6.2-646cff?style=flat-square&logo=vite)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38bdf8?style=flat-square&logo=tailwindcss)](https://tailwindcss.com/)
-[![Express](https://img.shields.io/badge/Express-4.21-000000?style=flat-square&logo=express)](https://expressjs.com/)
-[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_%26_Auth-3ecf8e?style=flat-square&logo=supabase)](https://supabase.com/)
-[![Gemini](https://img.shields.io/badge/Gemini_API-2.4-4285f4?style=flat-square&logo=google)](https://ai.google.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-Auth_%26_PostgreSQL_%26_Realtime-3ecf8e?style=flat-square&logo=supabase)](https://supabase.com/)
+[![Google Auth](https://img.shields.io/badge/Google-OAuth_2.0-4285f4?style=flat-square&logo=google)](https://cloud.google.com/)
 
 ---
 
 ## 📖 Table of Contents
 
-- [Live Demo](#-live-demo)
+- [Live Deployment](#-live-deployment)
 - [Overview](#-overview)
+- [Authentication & Role-Based Access Control](#-authentication--role-based-access-control)
 - [Key Features](#-key-features)
-- [Permanent Demo & Master Accounts](#-permanent-demo--master-accounts)
 - [Architecture & Tech Stack](#-architecture--tech-stack)
+- [Database & Storage Infrastructure](#-database--storage-infrastructure)
 - [Directory Structure](#-directory-structure)
 - [Page & Portal Map](#-page--portal-map)
 - [Getting Started](#-getting-started)
@@ -30,26 +31,23 @@
   - [Installation](#installation)
   - [Environment Configuration](#environment-configuration)
   - [Running the App](#running-the-app)
-- [Deployment](#-deployment)
-  - [Vercel Deployment (SPA Routing)](#vercel-deployment-spa-routing)
-  - [Full-Stack Node / Container Deployment](#full-stack-node--container-deployment)
-- [API Overview](#-api-overview)
-- [Security & Authorization Model](#-security--authorization-model)
-- [Contributing](#-contributing)
+- [Production Deployment](#-production-deployment)
+  - [Vercel Deployment (Edge CDN SPA)](#vercel-deployment-edge-cdn-spa)
+  - [Docker / Node.js Container Deployment](#docker--nodejs-container-deployment)
+- [Security & Infrastructure Hardening](#-security--infrastructure-hardening)
 - [License](#-license)
 
 ---
 
-## 🚀 Live Demo
+## 🚀 Live Deployment
 
-The production application is deployed live on Vercel:
+The production application is live and hosted on Vercel:
 
-👉 **[https://vitbhopalcampus.vercel.app](https://vitbhopalcampus.vercel.app)**
+👉 **[https://vitcampus-kappa.vercel.app](https://vitcampus-kappa.vercel.app)**
 
-- **SPA Routing Enabled**: Pre-configured with `vercel.json` rewrites so direct navigation, deep links, and browser refreshes (`/dashboard`, `/faculty/dashboard`, `/publisher`, `/admin`, `/events`, etc.) resolve seamlessly without 404 errors.
-- **Interactive Campus Explorer**: High-accuracy GIS mapping with pathfinding and point-of-interest categorization.
-- **Indoor Cabin Locator**: Floor-by-floor navigation guide for academic blocks and faculty spaces.
-- **Multi-Role Workflows**: Complete portals for Students, Faculty, Publishers, Administrators, and Guests.
+- **Production Security Headers**: Configured with strict Content Security Policy (CSP), Strict-Transport-Security (HSTS), X-Content-Type-Options, Referrer-Policy, and X-Frame-Options.
+- **Client-Side SPA Routing**: Pre-configured with `vercel.json` rewrites so direct navigation, deep links, and browser refreshes (`/dashboard`, `/faculty/dashboard`, `/publisher`, `/admin`, `/events`, etc.) resolve seamlessly without 404 errors.
+- **Realtime WebSocket Synchronization**: Powered by Supabase Realtime across `campus_public_stream` and authenticated private channels.
 
 ---
 
@@ -57,34 +55,33 @@ The production application is deployed live on Vercel:
 
 The **VIT Bhopal Digital Twin** bridges physical campus infrastructure with a real-time digital layer. Designed for students, faculty, club organizers, campus visitors, and university administrators, it eliminates campus navigation hurdles and streamlines verified information:
 
-- **Locating Faculty Cabins & Classrooms**: Instant search by faculty name, school, designation, or cabin code with floor-by-floor routing instructions.
-- **Interactive Campus GIS**: Explore Academic Blocks, Hostels, Food Courts, Sports Complexes, Health Centers, and ATMs with walking path directions.
-- **Live Verified Campus Events**: Club hackathons, cultural festivals, technical workshops, and guest lectures with RSVP tracking and automated expiration cleanup.
+- **Locating Faculty Cabins & Classrooms**: Instant search by faculty name, school, designation, or cabin code with floor-by-floor indoor routing instructions.
+- **Interactive Campus GIS**: Explore Academic Blocks (AB-1, AB-2, LC), Boy's & Girl's Hostels, Food Courts, Sports Arenas, ATM & Medical Centers with turn-by-turn walking directions.
+- **Live Verified Campus Events**: Club hackathons, cultural festivals, technical workshops, and guest lectures with poster uploads and RSVP tracking.
 - **Faculty Portal**: Cabin consultation hours, timetable status, course management, and direct student inquiries.
 - **Verified Publisher Hub**: Official channels for authorized student chapters and clubs to broadcast notices and publish events.
-- **Administrative Control Center**: Moderation queues, publisher approvals, faculty onboarding verification, and audit trail logs.
+- **Administrative Control Center**: Moderation queues, publisher approvals, faculty onboarding verification, and audit logs.
 - **Campus AI Concierge**: Powered by Google Gemini (`@google/genai`), answering queries on landmarks, office locations, and campus life.
 
 ---
 
-## 🔑 Permanent Demo & Master Accounts
+## 🔑 Authentication & Role-Based Access Control
 
-The platform includes four fixed, backend-authenticated server accounts designed for evaluation and testing across all five roles. These accounts are intentionally managed external to Supabase Auth, requiring zero registration or external dependencies:
+The platform features an authoritative, multi-tier authentication system powered by **Supabase Auth** with full **Google OAuth 2.0** support and database-enforced **Row-Level Security (RLS)**:
 
-| Account | Email | Password | Allowed Roles | Default Access Portal |
-|---|---|---|---|---|
-| **Master Admin** 👑 | `admin@vitbhopal.ac.in` | `admin9211` | `STUDENT`, `FACULTY`, `PUBLISHER`, `ADMIN`, `GUEST` | Full Admin Console (`/admin`) + Universal 5-Role Switcher |
-| **Demo Faculty** 👨‍🏫 | `faculty.demo@vitbhopal.ac.in` | `faculty9211` | `FACULTY` | Faculty Portal (`/faculty/dashboard`) |
-| **Demo Student** 🎓 | `student.demo@vitbhopal.ac.in` | `student9211` | `STUDENT` | Student Dashboard (`/dashboard`) |
-| **Demo Publisher** 📢 | `publisher.demo@vitbhopal.ac.in` | `publisher9211` | `PUBLISHER` | Publisher Hub (`/publisher`) |
+### 1. Evaluator / Multi-Role Administrator Account
+For evaluation and testing across all five application roles:
+- **Email**: `admin@vitbhopal.ac.in`
+- **Password**: `admin9211`
+- **Assigned Database Roles**: `ADMIN`, `FACULTY`, `PUBLISHER`, `STUDENT`
+- **Special Capability**: Can access the Administrative Control Center (`/admin`) and toggle between all views via the UI role switcher to test each user experience.
 
-### Key Capabilities of Fixed Accounts:
-1. **Server-Enforced Authorization**: Credential verification is performed server-side with constant-time HMAC-SHA256 (`crypto.timingSafeEqual`) and signed cryptographic tokens.
-2. **Master Role Switching**: The Master Admin account can seamlessly toggle between Student, Faculty, Publisher, Admin, and Guest views via the UI role switcher, with backend-validated token reissue (`/api/auth/demo-switch-role`).
-3. **Role Boundary Enforcement**: Demo accounts attempting to enter unauthorized roles (e.g., student entering `/admin`) are strictly rejected by the server (HTTP 403 Forbidden).
-4. **Production & Dev Ready**: Operates identically in local development, containerized environments, and cloud deployments.
+### 2. Google OAuth 2.0 (Continue with Google)
+- One-click authentication with Google.
+- Automatically claims institutional profiles or grants default student privileges upon sign-in.
 
-*(Standard users can also sign in or register with their own credentials via the Supabase Auth Email/Password or Google OAuth flow).*
+### 3. Institutional Email / Password Registration
+- Students and faculty can register directly with their institutional email address (`@vitbhopal.ac.in`).
 
 ---
 
@@ -100,20 +97,20 @@ The platform includes four fixed, backend-authenticated server accounts designed
 - Detailed cabin profiles with floor location, elevator/staircase entry points, office hours, and consultation availability.
 - Interactive indoor map visualization for complex academic floorplans.
 
-### 📅 Live Events, RSVPs & Automatic Expiration Engine
+### 📅 Live Events, RSVPs & Automatic Expiration
 - Curated calendar of verified hackathons, workshops, technical webinars, and cultural events.
 - RSVP tracking, calendar integration, and saved event bookmarks.
-- **Server-Side Event Cleanup Engine**: Periodic background scheduler (`/api/events/cleanup`) that detects expired events, marks them accordingly, and purges obsolete poster storage assets.
+- Automatic event expiration worker that detects elapsed dates and archives past events.
 
-### 🖼️ Secure Poster Upload Pipeline
-- Server-side image validator (`/api/events/upload-poster`) enforcing strict binary magic byte inspection (rejecting disguised executables), MIME validation (JPEG, PNG, WebP), and a 5MB size limit before pushing to Supabase Storage.
+### 🖼️ Supabase Storage File Pipeline
+- Dedicated public storage buckets for **event posters** (`event-posters`) and **campus guides** (`campus-guides`).
+- Validates file size (max 5MB for posters, 15MB for guides), strict MIME types (JPEG, PNG, WebP, PDF), and sanitizes object paths.
+- Uploads and deletions are protected by storage RLS policies (`is_admin() OR is_publisher()`).
 
-### 📢 Campus Hub & Verified Announcements
-- Official university bulletins and club announcements categorized by urgency (Critical, General, Academic).
-- Verified badge verification ensuring official authenticity and anti-misinformation protection.
-
-### 🤖 Gemini AI Campus Concierge
-- Integrated Google Gemini 2.5 Flash model answering natural language queries about buildings, faculty schedules, and student FAQs.
+### ⚡ Live Supabase Realtime Streams
+- Zero browser reloads required: updates broadcast instantly via WebSockets (`wss://`).
+- `campus_public_stream`: Synchronizes `events`, `announcements`, `campus_guides`, `faculty`, `locations`, and `publishers`.
+- Private user channel: Synchronizes user-scoped bookmarks (`saved_items`).
 
 ---
 
@@ -121,29 +118,38 @@ The platform includes four fixed, backend-authenticated server accounts designed
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        Client (SPA Frontend)                           │
+│                        Client (Vite React SPA)                         │
 │   React 19 • TypeScript 5.8 • Tailwind CSS v4 • React Router v7        │
 │   Leaflet GIS Maps • Motion UI • Lucide Icons • Context State Engine   │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ HTTP / REST / Realtime
-┌───────────────────────────────────▼────────────────────────────────────┐
-│                        Express Backend Server                          │
-│        Node.js • tsx • esbuild • Cryptographic Auth Engine             │
-│        Event Expiration Engine • Binary Poster Validation Pipeline     │
-└─────────────────┬──────────────────────────────────────┬───────────────┘
-                  │ SQL / Auth / Realtime                │ AI Inferences
-┌─────────────────▼─────────────────┐   ┌────────────────▼───────────────┐
-│       Supabase PostgreSQL         │   │       Google Gemini API        │
-│  Profiles, Events, Locations,     │   │     (@google/genai SDK)        │
-│  Announcements, Storage Buckets   │   │  Natural Language AI Assistant │
-└───────────────────────────────────┘   └────────────────────────────────┘
+└──────────────────┬─────────────────┬─────────────────┬─────────────────┘
+                   │ HTTPS           │ PostgREST + RLS │ WebSockets
+┌──────────────────▼──────┐   ┌──────▼──────┐   ┌──────▼────────┐
+│   Supabase Auth (JWT)   │   │ PostgreSQL  │   │ Realtime      │
+│   Email/Password +      │   │ RLS Tables  │   │ Channels      │
+│   Google OAuth 2.0      │   │ & Triggers  │   │ (Live Events) │
+└─────────────────────────┘   └─────────────┘   └───────────────┘
 ```
 
 - **Frontend**: [React 19](https://react.dev/), [TypeScript 5.8](https://www.typescriptlang.org/), [Tailwind CSS v4](https://tailwindcss.com/), [Vite 6](https://vitejs.dev/), [React Router v7](https://reactrouter.com/), [Leaflet](https://leafletjs.com/), [Motion](https://motion.dev/)
-- **Backend**: [Express 4](https://expressjs.com/), [Node.js](https://nodejs.org/), [tsx](https://github.com/privatenumber/tsx), [esbuild](https://esbuild.github.io/)
-- **Database & Services**: [Supabase](https://supabase.com/) (PostgreSQL, Supabase Auth, Supabase Storage, Supabase Realtime)
-- **AI Engine**: [@google/genai](https://www.npmjs.com/package/@google/genai) (Gemini 2.5 Flash)
-- **Bundler & Tooling**: Vite 6 + esbuild CJS server bundle (`dist/server.cjs`)
+- **Authoritative Backend**: [Supabase](https://supabase.com/)
+  - **Auth**: GoTrue JWT authentication with session persistence
+  - **Database**: PostgreSQL with Row-Level Security (RLS)
+  - **Storage**: S3-compatible asset buckets (`event-posters`, `campus-guides`)
+  - **Realtime**: Elixir-backed WebSocket multiplexer
+- **Server Runner**: [Express 4](https://expressjs.com/) (`server.ts` bundled with `esbuild` for Node/Docker hosting)
+- **Deployment**: [Vercel Edge CDN](https://vercel.com/)
+
+---
+
+## 💾 Database & Storage Infrastructure
+
+All database migrations and policies are documented under `/supabase`:
+
+| File | Description |
+| :--- | :--- |
+| [`supabase/schema.sql`](./supabase/schema.sql) | Canonical DDL for tables, constraints, indexes, RLS policies, helper functions (`is_admin()`, `is_publisher()`, `is_faculty()`), and publications. |
+| [`supabase/storage_policies.sql`](./supabase/storage_policies.sql) | Bucket definitions (`event-posters`, `campus-guides`) and storage RLS policies. |
+| [`supabase/seed.sql`](./supabase/seed.sql) | Initial dataset for campus locations, faculty directory, clubs, and sample events. |
 
 ---
 
@@ -152,29 +158,41 @@ The platform includes four fixed, backend-authenticated server accounts designed
 ```text
 ├── index.html                   # HTML entry point with metadata & SEO
 ├── package.json                 # Dependencies and build scripts
-├── server.ts                    # Express API server, demo auth & background workers
+├── server.ts                    # Hardened Express server for Node/Docker environments
 ├── tsconfig.json                # TypeScript project configuration
 ├── vite.config.ts               # Vite configuration (Tailwind v4 integration)
-├── vercel.json                  # Vercel SPA routing & rewrites configuration
-├── metadata.json                # Project capabilities & permissions manifest
+├── vercel.json                  # Vercel security headers & SPA rewrite rules
 ├── .env.example                 # Environment variable templates
 │
+├── supabase/                    # Canonical database migrations & policies
+│   ├── schema.sql               # PostgreSQL tables, functions, & RLS policies
+│   ├── storage_policies.sql     # Supabase Storage bucket policies
+│   └── seed.sql                 # Campus initial seed data
+│
 ├── src/                         # Frontend application source
-│   ├── App.tsx                  # React Router definitions & top-level providers
+│   ├── App.tsx                  # React Router definitions & providers
 │   ├── main.tsx                 # Application entry point
-│   ├── index.css                # Global CSS & Tailwind imports
-│   ├── types/                   # Shared TypeScript models (User, Event, Location, etc.)
+│   ├── index.css                # Global styles & Tailwind v4
+│   ├── types/                   # TypeScript interfaces (User, Event, Location, etc.)
+│   ├── lib/
+│   │   ├── supabase.ts          # Singleton Supabase client, storage helpers & validation
+│   │   ├── dateUtils.ts         # Asia/Kolkata (IST) timezone formatting helpers
+│   │   └── facultyAuthUtils.ts  # Faculty profile resolution helpers
 │   ├── components/              # Modular UI components
-│   │   ├── common/              # Buttons, inputs, modals, search, badges
-│   │   ├── layout/              # Navbar, Footer, MobileNav, Toast notification
+│   │   ├── common/              # Modals, verified badges, confirm dialogs
+│   │   ├── layout/              # Navbar, Footer, MobileNav, Toast system
 │   │   ├── map/                 # Interactive campus Leaflet map & POI markers
+│   │   ├── events/              # Event cards, poster uploaders, filter sheets
+│   │   ├── faculty/             # Cabin cards, faculty directory modals
+│   │   ├── announcements/       # Notice cards & announcement modals
+│   │   ├── guides/              # Campus guides & document viewer modals
 │   │   └── navigation/          # Indoor cabin visualizer & route directions
 │   ├── pages/                   # Application views & role portals
-│   │   ├── LandingPage.tsx      # Campus hero section & highlights
+│   │   ├── LandingPage.tsx      # Campus hero section & shortcuts
 │   │   ├── ExplorePage.tsx      # Map discovery & category filters
 │   │   ├── NavigationPage.tsx   # Campus pathfinding & routing
-│   │   ├── FacultyDirectoryPage.tsx # Cabin directory & indoor floor guides
-│   │   ├── FacultyDashboard.tsx # Faculty portal & timetable management
+│   │   ├── FacultyDirectoryPage.tsx # Cabin directory & floor plans
+│   │   ├── FacultyDashboard.tsx # Faculty portal & schedule manager
 │   │   ├── EventsPage.tsx       # Live events calendar & filters
 │   │   ├── EventDetailPage.tsx  # Detailed event view with RSVP
 │   │   ├── AnnouncementsPage.tsx# Official bulletins & urgent notices
@@ -184,14 +202,14 @@ The platform includes four fixed, backend-authenticated server accounts designed
 │   │   ├── PublisherCreateEventPage.tsx # Event drafting & poster upload
 │   │   ├── AdminDashboard.tsx   # Administrative control & metrics
 │   │   ├── AdminVerificationPage.tsx # Publisher & faculty moderation
-│   │   ├── LoginPage.tsx        # Multi-role login entry & auth form
+│   │   ├── LoginPage.tsx        # Multi-role login entry & Google OAuth button
 │   │   ├── ResetPasswordPage.tsx# Password reset flow
 │   │   └── NotFoundPage.tsx     # 404 handler
 │   └── services/                # Application state & backend communication
-│       ├── api.ts               # REST API fetch client
-│       ├── auth.tsx             # Supabase & demo authentication context
-│       ├── demoRoleSwitcher.tsx # Demo account role switching provider
-│       ├── storage.ts           # Hybrid Supabase / fallback storage layer
+│       ├── auth.tsx             # Supabase & Google OAuth authentication context
+│       ├── demoRoleSwitcher.tsx # Multi-role switcher for presentation testing
+│       ├── realtime.ts          # Resilient Supabase Realtime WebSocket manager
+│       ├── storage.ts           # Authoritative state manager & local cache
 │       └── data/seeds.ts        # Initial campus seed dataset
 │
 └── public/                      # Static assets, map markers, and icons
@@ -217,7 +235,7 @@ The platform includes four fixed, backend-authenticated server accounts designed
 | `/publisher/events/create` | **Create Event** | Form with image upload validation & schedule selector |
 | `/admin` | **Admin Dashboard** | High-level campus metrics, audit logs, and controls |
 | `/admin/verification` | **Verification Queue** | Moderation for new publisher & faculty applications |
-| `/login` | **Authentication** | Unified login with role selection and demo credentials |
+| `/login` | **Authentication** | Unified login with email/password and Google OAuth |
 
 ---
 
@@ -232,8 +250,8 @@ The platform includes four fixed, backend-authenticated server accounts designed
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/vit-bhopal-digital-twin.git
-   cd vit-bhopal-digital-twin
+   git clone https://github.com/goludheerajm31-arch/VIT-BHOPAL-TWIN.git
+   cd VIT-BHOPAL-TWIN
    ```
 
 2. **Install project dependencies**:
@@ -243,30 +261,23 @@ The platform includes four fixed, backend-authenticated server accounts designed
 
 ### Environment Configuration
 
-Create a local `.env` file based on `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Configure your environment variables:
+Create a local `.env.local` file:
 
 ```env
-# Google Gemini API key for campus assistant queries (optional for basic browsing)
-GEMINI_API_KEY="your-gemini-api-key"
+# Supabase Configuration
+VITE_SUPABASE_URL="https://cqhgnvxuvsqxrvdgmkpk.supabase.co"
+VITE_SUPABASE_ANON_KEY="your-anon-publishable-key"
 
-# Supabase Credentials (optional for local demo mode; enables full PostgreSQL storage)
-VITE_SUPABASE_URL="https://your-project.supabase.co"
-VITE_SUPABASE_ANON_KEY="your-anon-key"
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
-
-# Demo Mode Enabled
+# Optional: Demo Mode Role Switcher (true by default)
 VITE_DEMO_MODE=true
+
+# Server-side background worker secret (only needed for server.ts)
+# SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 ```
 
 ### Running the App
 
-Start the full-stack development server (Express backend + Vite client):
+Start the development server:
 
 ```bash
 npm run dev
@@ -280,78 +291,46 @@ To verify code quality and build for production:
 # Typecheck codebase
 npm run lint
 
-# Build client assets and bundle backend server
+# Build production assets
 npm run build
 
-# Start production server
+# Start production server (Node.js)
 npm run start
 ```
 
 ---
 
-## 🌐 Deployment
+## 🌐 Production Deployment
 
-### Vercel Deployment (SPA Routing)
+### Vercel Deployment (Edge CDN SPA)
 
-The application includes `vercel.json` for client-side routing rewrites:
-
-```json
-{
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
-}
-```
-
-1. Import the repository into [Vercel](https://vercel.com).
-2. Set Build Command to `npm run build` or `vite build`.
+1. Connect your GitHub repository to [Vercel](https://vercel.com).
+2. Set Build Command to `npm run build`.
 3. Set Output Directory to `dist`.
-4. Add environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `GEMINI_API_KEY`).
+4. Add the required Environment Variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_DEMO_MODE=true`
+5. In **Supabase Dashboard** $\rightarrow$ **Authentication** $\rightarrow$ **URL Configuration**:
+   - Set **Site URL** to your Vercel URL (e.g., `https://vitcampus-kappa.vercel.app`).
+   - Add `https://vitcampus-kappa.vercel.app/**` to **Redirect URLs**.
 
-### Full-Stack Node / Container Deployment
+### Docker / Node.js Container Deployment
 
-The backend compiles to a standalone Node CommonJS bundle at `dist/server.cjs` via `esbuild`. The server listens on port `3000` (or `process.env.PORT`) and serves both the Express API and production Vite assets.
-
----
-
-## 📡 API Overview
-
-| Method | Endpoint | Description | Auth Required |
-|---|---|---|---|
-| `GET` | `/api/health` | Service health, architecture, and timestamp | No |
-| `POST` | `/api/auth/demo-login` | Authenticate fixed demo or master account | No |
-| `GET` | `/api/auth/demo-session` | Validate cryptographic demo session token | Bearer Token |
-| `POST` | `/api/auth/demo-switch-role` | Switch demo active role with server validation | Bearer Token |
-| `POST` | `/api/auth/demo-logout` | Invalidate demo session | Bearer Token |
-| `POST` | `/api/events/upload-poster` | Binary magic number & MIME validation for posters | Yes (5MB max) |
-| `GET` | `/api/events/cleanup-status` | View last event expiration cleanup statistics | No |
-| `POST` | `/api/events/cleanup` | Trigger authoritative event expiration run | Admin / Worker |
+The backend compiles to a standalone Node CommonJS bundle at `dist/server.cjs` via `esbuild`. The server listens on `0.0.0.0:3000` (or `process.env.PORT`) and serves both the static production SPA and health endpoints (`/health`).
 
 ---
 
-## 🔒 Security & Authorization Model
+## 🔒 Security & Infrastructure Hardening
 
-1. **Constant-Time Verification**: Server-side demo authentication compares HMAC-SHA256 hashes using `crypto.timingSafeEqual` to eliminate timing attacks.
-2. **Strict Server-Side RBAC**: Role selection on the login page is treated merely as an entry request. The backend strictly validates whether the identity holds permission for that role before granting a session token.
-3. **Binary Content Inspection**: Image uploads inspect actual file magic bytes (`0xFF 0xD8 0xFF` for JPEG, `0x89 0x50 0x4E 0x47` for PNG, `RIFF...WEBP` for WebP) to prevent disguised executable uploads.
-4. **No Plaintext Credential Exposure**: Passwords are never sent in API responses or stored in frontend client storage.
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/indoor-floorplan-3d`).
-3. Commit your changes (`git commit -m 'feat: add enhanced floorplan view'`).
-4. Push to the branch (`git push origin feature/indoor-floorplan-3d`).
-5. Open a Pull Request.
+1. **Zero Secret Leaks**: The Supabase service role key is strictly absent from all client bundles and git commits.
+2. **PostgreSQL Row-Level Security (RLS)**: Access control is enforced authoritatively inside the database via `auth.uid()`, preventing any frontend role manipulation.
+3. **Hardened Security Headers**: Enforces strict CSP, HSTS (`max-age=31536000`), `X-Frame-Options: SAMEORIGIN`, and `X-Content-Type-Options: nosniff`.
+4. **File Upload Hardening**: Dual-layer MIME and size validation on posters (5MB max) and documents (15MB max) with sanitized S3 object keys.
+5. **Fail-Closed Worker**: Privileged background workers strictly fail closed if the required credentials are not supplied.
 
 ---
 
 ## 📄 License
 
 This project is licensed under the MIT License. Developed for the VIT Bhopal University community.
-
