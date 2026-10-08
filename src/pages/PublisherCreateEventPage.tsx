@@ -5,7 +5,7 @@ import { storage } from '../services/storage';
 import { useToast } from '../components/layout/Toast';
 import { CampusEvent, EventCategory } from '../types';
 import { EventPosterUploader } from '../components/events/EventPosterUploader';
-import { uploadEventPosterFile } from '../lib/supabase';
+import { uploadEventPosterFile, deleteEventPosterFile } from '../lib/supabase';
 import { getCurrentISTParts } from '../lib/dateUtils';
 import {
   ArrowLeft,
@@ -111,7 +111,7 @@ export const PublisherCreateEventPage: React.FC = () => {
       user?.department ||
       user?.name ||
       'Authorized Campus Publisher';
-    const publisherId = pubRecord?.id || user?.id || 'pub-authorized';
+    const publisherId = pubRecord?.id || storage.getPublishers()[0]?.id || 'pub-campus';
 
     const eventId = `evt-${Date.now()}`;
     setIsSubmitting(true);
@@ -164,7 +164,17 @@ export const PublisherCreateEventPage: React.FC = () => {
         registrationUrl: registrationUrl.trim() || undefined,
       };
 
-      await storage.saveEvent(newEvent, user?.id);
+      try {
+        await storage.saveEvent(newEvent, user?.id);
+      } catch (saveErr) {
+        if (storagePath) {
+          deleteEventPosterFile(storagePath).catch((err) =>
+            console.warn('[PublisherCreateEventPage] Clean up orphaned poster error:', err)
+          );
+        }
+        throw saveErr;
+      }
+
       toast('Event published live to the Campus Twin!', 'success');
       navigate(`/events/${newEvent.id}`);
     } catch (err: any) {

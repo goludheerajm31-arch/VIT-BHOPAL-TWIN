@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom';
-import { AuthProvider } from './services/auth';
+import { AuthProvider, useAuth } from './services/auth';
 import { DemoRoleProvider } from './services/demoRoleSwitcher';
 import { ToastProvider } from './components/layout/Toast';
 import { Navbar } from './components/layout/Navbar';
@@ -42,6 +42,38 @@ function ScrollToTop() {
   return null;
 }
 
+// Protected Route Guard with clean loading indicator
+const ProtectedRoute: React.FC<{
+  children: React.ReactNode;
+  allowedRoles?: ('ADMIN' | 'FACULTY' | 'PUBLISHER' | 'STUDENT')[];
+}> = ({ children, allowedRoles }) => {
+  const { user, isAuthenticated, loading, roles } = useAuth();
+  const location = useLocation();
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center p-6 space-y-3">
+        <div className="w-8 h-8 border-2 border-[#0071E3] border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs font-medium text-[#86868B]">Verifying institutional access...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (allowedRoles && allowedRoles.length > 0) {
+    const userRoleList = user.roles || roles || [user.role];
+    const hasRole = allowedRoles.some((r) => userRoleList.includes(r));
+    if (!hasRole) {
+      return <Navigate to="/dashboard" replace />;
+    }
+  }
+
+  return <>{children}</>;
+};
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -64,7 +96,7 @@ export default function App() {
                 <Route path="/navigation" element={<NavigationPage />} />
                 <Route path="/navigate" element={<NavigationPage />} />
                 <Route path="/faculty" element={<FacultyDirectoryPage />} />
-                <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
+                <Route path="/faculty/dashboard" element={<ProtectedRoute allowedRoles={['FACULTY', 'ADMIN']}><FacultyDashboard /></ProtectedRoute>} />
                 <Route path="/faculty/portal" element={<Navigate to="/faculty/dashboard" replace />} />
                 <Route path="/cabins" element={<FacultyDirectoryPage />} />
                 <Route path="/hub" element={<CampusHubPage />} />
@@ -76,14 +108,14 @@ export default function App() {
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
-                <Route path="/dashboard" element={<StudentDashboard />} />
+                <Route path="/dashboard" element={<ProtectedRoute><StudentDashboard /></ProtectedRoute>} />
                 <Route path="/profile" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/saved" element={<SavedItemsPage />} />
-                <Route path="/publisher" element={<PublisherDashboard />} />
-                <Route path="/publisher/events/create" element={<PublisherCreateEventPage />} />
-                <Route path="/publisher/events/new" element={<PublisherCreateEventPage />} />
-                <Route path="/admin" element={<AdminDashboard />} />
-                <Route path="/admin/verification" element={<AdminVerificationPage />} />
+                <Route path="/saved" element={<ProtectedRoute><SavedItemsPage /></ProtectedRoute>} />
+                <Route path="/publisher" element={<ProtectedRoute allowedRoles={['PUBLISHER', 'ADMIN']}><PublisherDashboard /></ProtectedRoute>} />
+                <Route path="/publisher/events/create" element={<ProtectedRoute allowedRoles={['PUBLISHER', 'ADMIN']}><PublisherCreateEventPage /></ProtectedRoute>} />
+                <Route path="/publisher/events/new" element={<ProtectedRoute allowedRoles={['PUBLISHER', 'ADMIN']}><PublisherCreateEventPage /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminDashboard /></ProtectedRoute>} />
+                <Route path="/admin/verification" element={<ProtectedRoute allowedRoles={['ADMIN']}><AdminVerificationPage /></ProtectedRoute>} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </main>

@@ -13,7 +13,7 @@ export const FacultyDirectoryPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   const { role, user } = useAuth();
-  const isAdmin = role === 'ADMIN';
+  const isAdmin = role === 'ADMIN' || user?.roles?.includes('ADMIN') || user?.isMasterAdmin;
 
   const [facultyList, setFacultyList] = useState<FacultyMember[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('q') || '');

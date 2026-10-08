@@ -174,7 +174,7 @@ export const AddFacultyModal: React.FC<AddFacultyModalProps> = ({
 }) => {
   const { toast } = useToast();
   const { role, user } = useAuth();
-  const isAdmin = role === 'ADMIN';
+  const isAdmin = role === 'ADMIN' || user?.roles?.includes('ADMIN') || user?.isMasterAdmin;
 
   const isEditing = !!initialFaculty;
 

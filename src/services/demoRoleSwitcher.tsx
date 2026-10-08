@@ -35,33 +35,33 @@ interface DemoRoleContextType {
 const DemoRoleContext = createContext<DemoRoleContextType | undefined>(undefined);
 
 export const DemoRoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { role: realAuthRole, user, switchMasterRole } = useAuth();
+  const { role: realAuthRole, user, switchActiveRole } = useAuth();
   const [simulatedRole, setSimulatedRole] = useState<UserRole | null>(null);
   const demoActive = isDemoModeEnabled();
 
   // Reset simulated override when real user changes or signs out
   useEffect(() => {
     setSimulatedRole(null);
-  }, [realAuthRole]);
+  }, [realAuthRole, user?.id]);
 
-  const activeRole: UserRole = user?.isMasterAdmin
-    ? realAuthRole
-    : demoActive && simulatedRole !== null
+  // Active role: must be an authorized role assigned in user.roles (or GUEST if unauthenticated)
+  const activeRole: UserRole = simulatedRole !== null && user?.roles?.includes(simulatedRole)
     ? simulatedRole
     : realAuthRole;
 
-  const isSimulated = !user?.isMasterAdmin && demoActive && simulatedRole !== null && simulatedRole !== realAuthRole;
+  const isSimulated = simulatedRole !== null && simulatedRole !== realAuthRole;
 
-  const setDemoRole = async (newRole: UserRole) => {
-    // If master administrator, execute backend-authorized role switch
-    if (user?.isMasterAdmin && switchMasterRole) {
-      await switchMasterRole(newRole);
+  const setDemoRole = (newRole: UserRole) => {
+    // CRITICAL SECURITY RULE: Only allow selecting a role that the user actually has in user.roles
+    if (user && !user.roles?.includes(newRole)) {
+      console.warn(`[RoleSwitcher] User does not possess the "${newRole}" role in public.user_roles. Selection rejected.`);
       return;
     }
 
-    if (!demoActive) return;
+    if (switchActiveRole && user?.roles?.includes(newRole)) {
+      switchActiveRole(newRole);
+    }
     setSimulatedRole(newRole);
-    console.info(`[DemoRoleSwitcher] UI simulated perspective shifted to: ${newRole}. Database & RLS remain authoritative.`);
   };
 
   const resetDemoRole = () => {
@@ -117,6 +117,7 @@ const ROLES_LIST: { id: UserRole; label: string }[] = [
  * - Selected role gets blue rounded background with white checkmark
  */
 export const DemoRoleSwitcher: React.FC<{ className?: string }> = ({ className = '' }) => {
+  const { user } = useAuth();
   const { activeRole, setDemoRole, isDemoActive, isSimulated } = useDemoRole();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -190,7 +191,15 @@ export const DemoRoleSwitcher: React.FC<{ className?: string }> = ({ className =
 
           {/* Role Items */}
           <div className="space-y-0.5">
-            {ROLES_LIST.map((r) => {
+            {ROLES_LIST
+              .filter((r) => {
+                // If user is logged in, only show roles they possess in user.roles (plus GUEST perspective)
+                if (user?.roles && user.roles.length > 0) {
+                  return user.roles.includes(r.id) || r.id === 'GUEST';
+                }
+                return r.id === 'GUEST';
+              })
+              .map((r) => {
               const isSelected = activeRole === r.id;
               return (
                 <button

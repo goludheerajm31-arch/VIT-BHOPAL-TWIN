@@ -79,12 +79,14 @@ export const AddEditGuideModal: React.FC<AddEditGuideModalProps> = ({
   const [newLinkUrl, setNewLinkUrl] = useState('');
 
   // Attachments
+  const [guideId, setGuideId] = useState<string>(() => initialGuide?.id || crypto.randomUUID());
   const [attachments, setAttachments] = useState<GuideAttachment[]>([]);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (initialGuide) {
+      setGuideId(initialGuide.id);
       setTitle(initialGuide.title);
       setCategory(initialGuide.category);
       setShortDescription(initialGuide.shortDescription || '');
@@ -103,6 +105,7 @@ export const AddEditGuideModal: React.FC<AddEditGuideModalProps> = ({
       setExternalLinks(initialGuide.externalLinks || []);
       setAttachments(initialGuide.attachments || []);
     } else {
+      setGuideId(crypto.randomUUID());
       resetForm();
     }
   }, [initialGuide, isOpen]);
@@ -191,7 +194,7 @@ export const AddEditGuideModal: React.FC<AddEditGuideModalProps> = ({
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    const targetGuideId = initialGuide?.id || crypto.randomUUID();
+    const targetGuideId = guideId;
 
     try {
       setIsUploadingFile(true);
@@ -243,7 +246,7 @@ export const AddEditGuideModal: React.FC<AddEditGuideModalProps> = ({
     const cleanRequired = requiredItems.map((r) => r.trim()).filter(Boolean);
 
     const guidePayload: Partial<CampusGuide> & { title: string; category: GuideCategory } = {
-      id: initialGuide?.id,
+      id: guideId,
       title: cleanTitle,
       category,
       shortDescription: shortDescription.trim(),

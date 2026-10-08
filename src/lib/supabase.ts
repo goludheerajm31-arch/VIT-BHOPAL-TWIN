@@ -11,6 +11,9 @@ import {
   FacultyApplication,
   PublisherApplication,
   StudentRecord,
+  UserRole,
+  UserRoleRecord,
+  PublisherRoleStatus,
 } from '../types';
 import { parseEventDateTimeToIST } from './dateUtils';
 
@@ -32,20 +35,29 @@ export const isSupabaseConfigured = (): boolean => {
     typeof supabaseAnonKey === 'string' &&
     supabaseAnonKey.length > 20 &&
     !supabaseAnonKey.startsWith('http') &&
+    !supabaseAnonKey.includes('placeholder') &&
+    !supabaseAnonKey.includes('unconfigured') &&
     supabaseAnonKey !== supabaseUrl;
 
   const isUrlValid =
     typeof supabaseUrl === 'string' &&
     supabaseUrl.length > 0 &&
     supabaseUrl.startsWith('http') &&
-    !supabaseUrl.includes('placeholder');
+    !supabaseUrl.includes('placeholder') &&
+    !supabaseUrl.includes('unconfigured');
 
   return isUrlValid && isKeyValid;
 };
 
-// Singleton Supabase Client (always non-null so auth listeners never throw null pointers)
-const activeUrl = supabaseUrl || 'https://vitbhopal-digital-twin.supabase.co';
-const activeKey = supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder_anon_key';
+if (!isSupabaseConfigured()) {
+  console.error(
+    '[Configuration Warning] Supabase is not configured. Missing valid VITE_SUPABASE_URL and/or VITE_SUPABASE_ANON_KEY. Remote database, auth, and realtime features require these environment variables.'
+  );
+}
+
+// Singleton Supabase Client (initialized with unconfigured endpoint if env vars are missing so client hooks never throw null pointers)
+const activeUrl = supabaseUrl || 'https://unconfigured-project.supabase.co';
+const activeKey = supabaseAnonKey || 'unconfigured-publishable-key';
 
 export const supabase: SupabaseClient = createClient(activeUrl, activeKey, {
   auth: {
@@ -59,6 +71,7 @@ export const supabase: SupabaseClient = createClient(activeUrl, activeKey, {
     },
   },
 });
+
 
 /**
  * Data Mapping Helpers (Database Snake_case <-> Application CamelCase)
@@ -431,14 +444,6 @@ export function mapAnnouncementToDb(a: Announcement): any {
     priority: a.priority,
     action_url: a.actionUrl || null,
     verified: Boolean(a.verified),
-    status: a.status || (a.verified ? 'approved' : 'pending'),
-    author_role: a.authorRole || null,
-    author_id: a.authorId || null,
-    author_email: a.authorEmail || null,
-    author_reg_number: a.authorRegNumber || null,
-    reviewed_by: a.reviewedBy || null,
-    reviewed_at: a.reviewedAt || null,
-    rejection_reason: a.rejectionReason || null,
     updated_at: new Date().toISOString(),
   };
 }
@@ -526,6 +531,23 @@ export function mapPublisherApplicationToDb(app: PublisherApplication): any {
     reviewed_at: app.reviewed_at || app.reviewedAt || null,
     rejection_reason: app.rejection_reason || app.rejectionReason || null,
     updated_at: new Date().toISOString(),
+  };
+}
+
+export function mapDbToUserRole(row: any): UserRoleRecord {
+  return {
+    id: row.id,
+    userId: row.user_id || null,
+    email: (row.email || '').trim().toLowerCase(),
+    role: row.role as UserRole,
+    status: row.status as PublisherRoleStatus,
+    grantedBy: row.granted_by || null,
+    grantedAt: row.granted_at || null,
+    revokedAt: row.revoked_at || null,
+    organization: row.organization || null,
+    notes: row.notes || null,
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString(),
   };
 }
 
@@ -637,77 +659,14 @@ export function mapCampusGuideToDb(g: CampusGuide): any {
   };
 }
 
-/**
- * Validates and uploads a file to Supabase Storage ('campus-guides' bucket).
- * Allowed: PDF, JPG, JPEG, PNG, WEBP.
- * Maximum file size: 15MB.
- */
-export async function uploadGuideFileToStorage(
-  file: File,
-  guideId: string
-): Promise<{ storagePath: string; publicUrl: string; fileType: string; fileSize: number; fileName: string }> {
-  const allowedMimeTypes = [
-    'application/pdf',
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-    'image/webp',
-  ];
-
-  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
-
-  if (!allowedMimeTypes.includes(file.type.toLowerCase())) {
-    throw new Error('Unsupported file type. Only PDF documents and JPG/PNG/WEBP images are allowed.');
-  }
-
-  if (file.size > MAX_FILE_SIZE) {
-    throw new Error(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 15MB.`);
-  }
-
-  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const uniqueId = crypto.randomUUID().slice(0, 8);
-  const storagePath = `guides/${guideId}/${uniqueId}_${cleanFileName}`;
-
-  if (isSupabaseConfigured() && supabase) {
-    const { error } = await supabase.storage.from('campus-guides').upload(storagePath, file, {
-      cacheControl: '3600',
-      upsert: true,
-      contentType: file.type,
-    });
-
-    if (error) {
-      console.warn('[Supabase Storage] Upload error:', error.message);
-      // If bucket does not exist or permissions fail, return a fallback object URL for development
-    }
-
-    const { data: publicUrlData } = supabase.storage.from('campus-guides').getPublicUrl(storagePath);
-    const publicUrl = publicUrlData?.publicUrl || URL.createObjectURL(file);
-
-    return {
-      storagePath,
-      publicUrl,
-      fileType: file.type,
-      fileSize: file.size,
-      fileName: file.name,
-    };
-  }
-
-  // Graceful offline/demo fallback
-  const mockUrl = URL.createObjectURL(file);
-  return {
-    storagePath,
-    publicUrl: mockUrl,
-    fileType: file.type,
-    fileSize: file.size,
-    fileName: file.name,
-  };
-}
-
 // ----------------------------------------------------------------------------
-// Supabase Storage: Event Poster Upload & Deletion
+// Supabase Storage: Bucket Names & Limits
 // ----------------------------------------------------------------------------
 export const EVENT_POSTER_BUCKET = 'event-posters';
+export const CAMPUS_GUIDE_BUCKET = 'campus-guides';
 export const MAX_POSTER_SIZE = 5 * 1024 * 1024; // 5MB max
+export const MAX_GUIDE_FILE_SIZE = 15 * 1024 * 1024; // 15MB max
+
 export const ALLOWED_POSTER_MIME_TYPES = [
   'image/jpeg',
   'image/jpg',
@@ -715,6 +674,98 @@ export const ALLOWED_POSTER_MIME_TYPES = [
   'image/webp',
 ];
 
+export const ALLOWED_GUIDE_MIME_TYPES = [
+  'application/pdf',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+];
+
+/**
+ * Validates and uploads a file to Supabase Storage ('campus-guides' bucket).
+ * Allowed: PDF, JPG, JPEG, PNG, WEBP.
+ * Maximum file size: 15MB.
+ * Strictly uses authenticated Supabase client and throws descriptive error on failure.
+ */
+export async function uploadGuideFileToStorage(
+  file: File,
+  guideId: string
+): Promise<{ storagePath: string; publicUrl: string; fileType: string; fileSize: number; fileName: string }> {
+  const normType = file.type.toLowerCase().trim();
+  if (!ALLOWED_GUIDE_MIME_TYPES.includes(normType)) {
+    throw new Error('Unsupported file type. Only PDF documents and JPG/PNG/WEBP images are allowed.');
+  }
+
+  if (file.size > MAX_GUIDE_FILE_SIZE) {
+    throw new Error(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 15MB.`);
+  }
+
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase client is not configured. Cannot upload campus guide document.');
+  }
+
+  const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const uniqueId = crypto.randomUUID().slice(0, 8);
+  const cleanGuideId = guideId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const storagePath = `guides/${cleanGuideId}/${uniqueId}_${cleanFileName}`;
+
+  const { error } = await supabase.storage.from(CAMPUS_GUIDE_BUCKET).upload(storagePath, file, {
+    cacheControl: '3600',
+    upsert: true,
+    contentType: normType,
+  });
+
+  if (error) {
+    console.error('[Supabase Storage] Campus guide upload error:', error.message);
+    throw new Error(`Failed to upload campus guide document to Supabase Storage: ${error.message}`);
+  }
+
+  const { data: publicUrlData } = supabase.storage.from(CAMPUS_GUIDE_BUCKET).getPublicUrl(storagePath);
+  const publicUrl = publicUrlData?.publicUrl;
+
+  if (!publicUrl) {
+    throw new Error('Failed to resolve public URL for uploaded campus guide document.');
+  }
+
+  return {
+    storagePath,
+    publicUrl,
+    fileType: normType,
+    fileSize: file.size,
+    fileName: file.name,
+  };
+}
+
+/**
+ * Deletes a file from Supabase Storage ('campus-guides' bucket).
+ */
+export async function deleteCampusGuideFile(storagePath: string): Promise<boolean> {
+  if (!storagePath) return false;
+
+  if (isSupabaseConfigured() && supabase) {
+    try {
+      const { error } = await supabase.storage.from(CAMPUS_GUIDE_BUCKET).remove([storagePath]);
+      if (error) {
+        console.warn('[Supabase Storage] Could not remove campus guide file:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      console.warn('[Supabase Storage] Error deleting campus guide file:', err?.message);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Validates and uploads an event poster to Supabase Storage ('event-posters' bucket).
+ * Allowed: JPG, JPEG, PNG, WEBP.
+ * Maximum file size: 5MB.
+ * Strictly uses authenticated Supabase client and throws descriptive error on failure.
+ */
 export async function uploadEventPosterFile(
   eventId: string,
   file: File,
@@ -726,7 +777,7 @@ export async function uploadEventPosterFile(
   fileSize: number;
   fileName: string;
 }> {
-  const normType = file.type.toLowerCase();
+  const normType = file.type.toLowerCase().trim();
   if (!ALLOWED_POSTER_MIME_TYPES.includes(normType)) {
     throw new Error('Unsupported image format. Only JPG, PNG, and WEBP posters are accepted.');
   }
@@ -737,54 +788,10 @@ export async function uploadEventPosterFile(
     );
   }
 
-  // Convert File to base64 for secure server-side validation & upload
-  const fileBase64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = () => reject(new Error('Failed to read poster file'));
-    reader.readAsDataURL(file);
-  });
-
-  try {
-    const response = await fetch('/api/events/upload-poster', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        eventId,
-        fileName: file.name,
-        fileType: normType,
-        fileBase64,
-        oldStoragePath,
-      }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return {
-        storagePath: data.storagePath,
-        publicUrl: data.publicUrl,
-        fileType: data.fileType,
-        fileSize: data.fileSize,
-        fileName: data.fileName,
-      };
-    } else {
-      const errData = await response.json().catch(() => ({}));
-      // If it's a validation error from server (400), propagate it directly
-      if (response.status === 400 && errData.error) {
-        throw new Error(`Server validation rejected file: ${errData.error}`);
-      }
-      console.warn('[Poster Upload] Server endpoint error, attempting client storage fallback:', errData.error);
-    }
-  } catch (err: any) {
-    if (err.message?.includes('Server validation rejected file')) {
-      throw err;
-    }
-    console.warn('[Poster Upload] Backend API request failed, falling back to direct client Supabase upload:', err?.message);
+  if (!isSupabaseConfigured() || !supabase) {
+    throw new Error('Supabase client is not configured. Cannot upload event poster.');
   }
 
-  // Client-side direct Supabase Storage fallback
   let ext = 'jpg';
   if (normType.includes('png')) ext = 'png';
   else if (normType.includes('webp')) ext = 'webp';
@@ -794,42 +801,47 @@ export async function uploadEventPosterFile(
   const uniqueSuffix = Date.now();
   const storagePath = `events/${cleanEventId}/poster_${uniqueSuffix}.${ext}`;
 
-  if (isSupabaseConfigured() && supabase) {
-    const { error } = await supabase.storage.from(EVENT_POSTER_BUCKET).upload(storagePath, file, {
-      cacheControl: '3600',
-      upsert: true,
-      contentType: normType,
-    });
+  const { error } = await supabase.storage.from(EVENT_POSTER_BUCKET).upload(storagePath, file, {
+    cacheControl: '3600',
+    upsert: true,
+    contentType: normType,
+  });
 
-    if (error) {
-      console.warn('[Supabase Storage] Event poster upload error:', error.message);
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from(EVENT_POSTER_BUCKET)
-      .getPublicUrl(storagePath);
-    const publicUrl = publicUrlData?.publicUrl || URL.createObjectURL(file);
-
-    return {
-      storagePath,
-      publicUrl,
-      fileType: normType,
-      fileSize: file.size,
-      fileName: file.name,
-    };
+  if (error) {
+    console.error('[Supabase Storage] Event poster upload error:', error.message);
+    throw new Error(`Failed to upload event poster to Supabase Storage: ${error.message}`);
   }
 
-  // Graceful offline/local development fallback
-  const fallbackUrl = URL.createObjectURL(file);
+  const { data: publicUrlData } = supabase.storage
+    .from(EVENT_POSTER_BUCKET)
+    .getPublicUrl(storagePath);
+  const publicUrl = publicUrlData?.publicUrl;
+
+  if (!publicUrl) {
+    throw new Error('Failed to resolve public URL for uploaded event poster.');
+  }
+
+  // If replacing an existing poster: clean up old poster file after new upload succeeds
+  if (oldStoragePath && typeof oldStoragePath === 'string' && oldStoragePath !== storagePath) {
+    try {
+      await supabase.storage.from(EVENT_POSTER_BUCKET).remove([oldStoragePath]);
+    } catch (cleanupErr: any) {
+      console.warn('[Supabase Storage] Warning cleaning up old poster file:', cleanupErr?.message);
+    }
+  }
+
   return {
     storagePath,
-    publicUrl: fallbackUrl,
+    publicUrl,
     fileType: normType,
     fileSize: file.size,
     fileName: file.name,
   };
 }
 
+/**
+ * Deletes an event poster from Supabase Storage ('event-posters' bucket).
+ */
 export async function deleteEventPosterFile(storagePath: string): Promise<boolean> {
   if (!storagePath) return false;
 
@@ -849,5 +861,6 @@ export async function deleteEventPosterFile(storagePath: string): Promise<boolea
 
   return true;
 }
+
 
 

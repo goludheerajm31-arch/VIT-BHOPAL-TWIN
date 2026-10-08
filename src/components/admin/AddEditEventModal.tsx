@@ -3,7 +3,7 @@ import { CampusEvent, CampusLocation, EventCategory } from '../../types';
 import { storage } from '../../services/storage';
 import { useToast } from '../layout/Toast';
 import { EventPosterUploader } from '../events/EventPosterUploader';
-import { uploadEventPosterFile } from '../../lib/supabase';
+import { uploadEventPosterFile, deleteEventPosterFile } from '../../lib/supabase';
 import { X, Calendar, MapPin, Clock, Tag, Sparkles } from 'lucide-react';
 
 const CATEGORIES: EventCategory[] = [
@@ -111,12 +111,15 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
       let storagePath = currentStoragePath;
       let posterMeta = initialEvent?.posterMetadata;
 
+      let newUploadedStoragePath: string | undefined = undefined;
+
       // Handle new poster upload
       if (posterFile) {
         toast('Uploading poster to secure storage...', 'info');
-        const uploadResult = await uploadEventPosterFile(eventId, posterFile);
+        const uploadResult = await uploadEventPosterFile(eventId, posterFile, currentStoragePath);
         coverImage = uploadResult.publicUrl;
         storagePath = uploadResult.storagePath;
+        newUploadedStoragePath = uploadResult.storagePath;
         posterMeta = {
           fileName: uploadResult.fileName,
           storagePath: uploadResult.storagePath,
@@ -142,7 +145,7 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
         locationName: selectedLoc?.name || 'VITB Academic Block 1',
         venueDetail: venueDetail.trim() || undefined,
         organizer: organizer.trim() || 'VIT Bhopal Campus',
-        publisherId: initialEvent?.publisherId || 'pub-aiml-club',
+        publisherId: initialEvent?.publisherId || storage.getPublishers()[0]?.id || 'pub-campus',
         capacity: capacity ? parseInt(capacity, 10) : undefined,
         registrationUrl: registrationUrl.trim() || undefined,
         description: description.trim(),
@@ -155,7 +158,18 @@ export const AddEditEventModal: React.FC<AddEditEventModalProps> = ({
         tags: [category, 'Campus', 'Verified'],
       };
 
-      await storage.saveEvent(eventToSave);
+      try {
+        await storage.saveEvent(eventToSave);
+      } catch (saveErr) {
+        // If event save failed in DB, clean up newly uploaded poster to avoid orphan file
+        if (newUploadedStoragePath) {
+          deleteEventPosterFile(newUploadedStoragePath).catch((err) =>
+            console.warn('[AddEditEventModal] Failed to clean up orphaned poster:', err)
+          );
+        }
+        throw saveErr;
+      }
+
       toast(
         initialEvent ? `Updated "${eventToSave.title}"` : `Created event "${eventToSave.title}" live!`,
         'success'

@@ -37,8 +37,8 @@ export const FacultyCabinCard: React.FC<FacultyCabinCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { role } = useAuth();
-  const isAdmin = role === 'ADMIN';
+  const { role, user } = useAuth();
+  const isAdmin = role === 'ADMIN' || user?.roles?.includes('ADMIN') || user?.isMasterAdmin;
   const [copied, setCopied] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
 

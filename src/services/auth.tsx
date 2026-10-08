@@ -1,16 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, UserRoleRecord } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { storage, DATA_CHANGE_EVENT } from './storage';
+import { realtimeClient } from './realtime';
 import { normalizeEmail, isInstitutionalEmail } from '../lib/facultyAuthUtils';
 import { User as SupabaseAuthUser } from '@supabase/supabase-js';
-
-const FIXED_DEMO_EMAILS = new Set([
-  'admin@vitbhopal.ac.in',
-  'faculty.demo@vitbhopal.ac.in',
-  'student.demo@vitbhopal.ac.in',
-  'publisher.demo@vitbhopal.ac.in',
-]);
 
 export interface AuthContextType {
   user: User | null;
@@ -41,7 +35,7 @@ export interface AuthContextType {
   signOut: () => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  switchMasterRole?: (newRole: UserRole) => Promise<boolean>;
+  switchActiveRole?: (newRole: UserRole) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -54,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Authoritative identity & capability resolution:
    * Maps a Supabase Auth identity (auth.users.id UUID + verified email)
    * to application profile and database-based authorization records (students, faculty, publishers, user_roles).
+   * public.user_roles is the primary authority for multi-role permissions.
    */
   const resolveAuthoritativeUser = useCallback(
     async (supabaseUser: SupabaseAuthUser): Promise<User | null> => {
@@ -116,8 +111,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 4. Centralized User Roles table lookup (ADMIN, PUBLISHER, etc.)
-      const activeRoleRecords = storage
+      // 4. Query public.user_roles directly from Supabase for this authenticated user
+      let activeDbRoles: UserRoleRecord[] = [];
+      try {
+        const { data: rolesData, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('*')
+          .or(`user_id.eq.${authUserId},email.eq.${cleanEmail}`)
+          .eq('status', 'ACTIVE');
+
+        if (!rolesError && Array.isArray(rolesData)) {
+          activeDbRoles = rolesData.map((r: any) => ({
+            id: r.id,
+            userId: r.user_id,
+            email: r.email,
+            role: r.role as UserRole,
+            status: r.status,
+            grantedBy: r.granted_by,
+            grantedAt: r.granted_at,
+            revokedAt: r.revoked_at,
+            organization: r.organization,
+            notes: r.notes,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          }));
+        }
+      } catch (err) {
+        console.warn('[Auth] Supabase user_roles fetch warning:', err);
+      }
+
+      // Fallback/augment with in-memory sync if available
+      const memoryRoleRecords = storage
         .getUserRoleRecords()
         .filter(
           (r) =>
@@ -125,41 +149,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             (r.userId === authUserId || normalizeEmail(r.email) === cleanEmail)
         );
 
+      const combinedRoles = [...activeDbRoles, ...memoryRoleRecords];
+
       // 5. Derive authorized roles strictly from database records
       const authorizedRoles = new Set<UserRole>();
 
-      // Admin access: explicitly provisioned in user_roles or system administrator email
-      const isAdminAccount =
-        activeRoleRecords.some((r) => r.role === 'ADMIN') ||
-        cleanEmail === 'admin@vitbhopal.ac.in';
-
-      if (isAdminAccount) {
+      // Admin role strictly from active record in user_roles
+      const hasAdminRole = combinedRoles.some((r) => r.role === 'ADMIN');
+      if (hasAdminRole) {
         authorizedRoles.add('ADMIN');
       }
 
-      // Faculty access: verified non-disabled faculty directory record
-      if (faculty && faculty.status !== 'DISABLED') {
+      // Faculty role from user_roles or non-disabled faculty directory record
+      const hasFacultyRole = combinedRoles.some((r) => r.role === 'FACULTY') || (faculty && faculty.status !== 'DISABLED');
+      if (hasFacultyRole) {
         authorizedRoles.add('FACULTY');
       }
 
-      // Publisher access: active publisher record or granted publisher role
-      if (hasPublisherRole && publisher?.status !== 'DISABLED') {
+      // Publisher role from user_roles or active publisher record
+      const hasPubRole = combinedRoles.some((r) => r.role === 'PUBLISHER') || (hasPublisherRole && publisher?.status !== 'DISABLED');
+      if (hasPubRole) {
         authorizedRoles.add('PUBLISHER');
       }
 
-      // Student access: student record or standard institutional student identity
-      if (student || (!isAdminAccount && !faculty)) {
+      // Student role from user_roles, student record, or default for institutional user
+      const hasStudentRole = combinedRoles.some((r) => r.role === 'STUDENT') || student || (!hasAdminRole && !hasFacultyRole);
+      if (hasStudentRole) {
         authorizedRoles.add('STUDENT');
       }
 
       const rolesList = Array.from(authorizedRoles);
 
       // Primary role designation
-      const primaryRole: UserRole = isAdminAccount
+      const primaryRole: UserRole = hasAdminRole
         ? 'ADMIN'
-        : faculty && faculty.status !== 'DISABLED'
+        : hasFacultyRole
         ? 'FACULTY'
-        : rolesList.includes('PUBLISHER') && !rolesList.includes('STUDENT')
+        : hasPubRole && !hasStudentRole
         ? 'PUBLISHER'
         : 'STUDENT';
 
@@ -175,7 +201,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         faculty?.departmentName ||
         student?.department ||
         student?.branch ||
-        (isAdminAccount ? 'Dean Office & IT Governance' : 'Student Body');
+        (hasAdminRole ? 'Dean Office & IT Governance' : 'Student Body');
 
       const appUser: User = {
         id: authUserId, // Canonical Supabase Auth UUID
@@ -184,6 +210,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: primaryRole,
         roles: rolesList,
         isPublisher: rolesList.includes('PUBLISHER'),
+        isMasterAdmin: hasAdminRole,
         publisherId: publisher?.id,
         publisherStatus: publisher?.status,
         facultyId: faculty?.id,
@@ -202,26 +229,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const refreshUser = useCallback(async () => {
-    const masterToken = sessionStorage.getItem('vit_master_token');
-    if (masterToken) {
-      try {
-        const res = await fetch('/api/auth/demo-session', {
-          headers: { Authorization: `Bearer ${masterToken}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.user) {
-            setCurrentUser(data.user);
-            return;
-          }
-        }
-      } catch (err) {
-        console.warn('[Demo Auth] Session refresh notice:', err);
-      }
-    }
-
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.warn('[Supabase Auth] Session fetch error:', error.message);
+      }
       if (session?.user) {
         const u = await resolveAuthoritativeUser(session.user);
         setCurrentUser(u);
@@ -237,86 +249,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isMounted = true;
 
-    const checkSupabaseSession = () => {
-      supabase.auth
-        .getSession()
-        .then(({ data: { session }, error }) => {
-          if (!isMounted) return;
-          if (error) {
-            console.warn('[Supabase Auth] Get session notice:', error.message);
-          }
-          if (session?.user) {
-            resolveAuthoritativeUser(session.user).then((u) => {
-              if (isMounted) {
-                setCurrentUser(u);
-                setLoading(false);
-              }
-            });
-          } else {
-            setLoading(false);
-          }
-        })
-        .catch((err) => {
-          console.warn('[Supabase Auth] Session fetch error:', err);
-          if (isMounted) setLoading(false);
-        });
-    };
+    // Connect Realtime public stream
+    realtimeClient.connect();
 
-    // 1. Check for dedicated master / demo administrator session token
-    const masterToken = sessionStorage.getItem('vit_master_token');
-    if (masterToken) {
-      fetch('/api/auth/demo-session', {
-        headers: { Authorization: `Bearer ${masterToken}` },
+    // 1. Initial getSession call
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session }, error }) => {
+        if (!isMounted) return;
+        if (error) {
+          console.warn('[Supabase Auth] Initial getSession error:', error.message);
+        }
+        if (session?.user) {
+          try {
+            const u = await resolveAuthoritativeUser(session.user);
+            if (isMounted) {
+              setCurrentUser(u);
+              realtimeClient.syncAuth(u);
+            }
+          } catch (e) {
+            console.error('[Supabase Auth] Failed resolving user on session load:', e);
+          }
+        } else {
+          if (isMounted) {
+            setCurrentUser(null);
+            realtimeClient.syncAuth(null);
+          }
+        }
+        if (isMounted) setLoading(false);
       })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (!isMounted) return;
-          if (data && data.success && data.user) {
-            setCurrentUser(data.user);
-            setLoading(false);
-          } else {
-            sessionStorage.removeItem('vit_master_token');
-            checkSupabaseSession();
-          }
-        })
-        .catch(() => {
-          if (!isMounted) return;
-          sessionStorage.removeItem('vit_master_token');
-          checkSupabaseSession();
-        });
-    } else {
-      checkSupabaseSession();
-    }
+      .catch((err) => {
+        console.warn('[Supabase Auth] Session fetch exception:', err);
+        if (isMounted) setLoading(false);
+      });
 
-    // 2. Subscribe to Supabase auth state changes for normal users
+    // 2. Subscribe to Supabase auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!isMounted) return;
-        // Don't overwrite if master admin session is active
-        if (sessionStorage.getItem('vit_master_token')) return;
 
         if (event === 'SIGNED_OUT' || !session) {
           setCurrentUser(null);
+          realtimeClient.syncAuth(null);
           setLoading(false);
         } else if (session?.user) {
-          const u = await resolveAuthoritativeUser(session.user);
-          if (isMounted) {
-            setCurrentUser(u);
-            setLoading(false);
+          try {
+            const u = await resolveAuthoritativeUser(session.user);
+            if (isMounted) {
+              setCurrentUser(u);
+              realtimeClient.syncAuth(u);
+              setLoading(false);
+            }
+          } catch (err) {
+            console.error('[Supabase Auth] Auth state change resolution error:', err);
+            if (isMounted) setLoading(false);
           }
         }
       }
     );
 
-    // 3. Re-evaluate authorization on database changes (e.g., publisher approval)
+    // 3. Re-evaluate authorization on storage data updates
     const handleDataChange = async () => {
       if (!isMounted) return;
-      if (sessionStorage.getItem('vit_master_token')) return;
-
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         const u = await resolveAuthoritativeUser(session.user);
-        if (isMounted) setCurrentUser(u);
+        if (isMounted && u) setCurrentUser(u);
       }
     };
 
@@ -329,7 +327,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [resolveAuthoritativeUser]);
 
-  // Universal Sign-In with Email and Password
+  // Universal Sign-In with Email and Password strictly using Supabase Auth
   const signInWithPassword = async (
     email: string,
     password: string,
@@ -341,46 +339,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     if (!password) {
       return { success: false, error: 'Password is required.' };
-    }
-
-    // =========================================================================
-    // DEDICATED BACKEND PATH FOR FIXED DEMO ACCOUNTS (EXTERNAL TO SUPABASE AUTH)
-    // 1. Master Admin (admin@vitbhopal.ac.in)
-    // 2. Demo Faculty (faculty.demo@vitbhopal.ac.in)
-    // 3. Demo Student (student.demo@vitbhopal.ac.in)
-    // 4. Demo Publisher (publisher.demo@vitbhopal.ac.in)
-    // =========================================================================
-    if (FIXED_DEMO_EMAILS.has(cleanEmail)) {
-      try {
-        const response = await fetch('/api/auth/demo-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: cleanEmail,
-            password,
-            entryPoint,
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-          return {
-            success: false,
-            error: data.error || 'Demo authentication failed.',
-          };
-        }
-
-        if (data.token) {
-          sessionStorage.setItem('vit_master_token', data.token);
-        }
-        setCurrentUser(data.user);
-        return { success: true, user: data.user };
-      } catch (err: any) {
-        return {
-          success: false,
-          error: err?.message || 'Server error contacting demo authentication service.',
-        };
-      }
     }
 
     try {
@@ -519,7 +477,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           redirectTo: `${window.location.origin}/reset-password`,
         });
       }
-      // Generic response that does not expose whether an email has an account
       return {
         success: true,
         message:
@@ -534,60 +491,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Universal Sign-Out
+  // Universal Sign-Out strictly through Supabase Auth
   const signOut = async () => {
-    const masterToken = sessionStorage.getItem('vit_master_token');
-    if (masterToken) {
-      try {
-        await fetch('/api/auth/demo-logout', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${masterToken}` },
-        });
-      } catch (e) {
-        // Ignore network errors on logout
-      }
-      sessionStorage.removeItem('vit_master_token');
-    }
-
     try {
       await supabase.auth.signOut();
     } catch (err) {
       console.warn('[Supabase Auth] SignOut warning:', err);
     } finally {
+      realtimeClient.syncAuth(null);
       setCurrentUser(null);
       sessionStorage.removeItem('vit_twin_auth_entry_point');
     }
   };
 
-  // Master / Demo Account backend-authorized role switch
-  const switchMasterRole = async (newRole: UserRole): Promise<boolean> => {
-    const masterToken = sessionStorage.getItem('vit_master_token');
-    if (!masterToken) return false;
-
-    try {
-      const res = await fetch('/api/auth/demo-switch-role', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${masterToken}`,
-        },
-        body: JSON.stringify({ role: newRole }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.user) {
-          if (data.token) {
-            sessionStorage.setItem('vit_master_token', data.token);
-          }
-          setCurrentUser(data.user);
-          return true;
-        }
-      }
-    } catch (err) {
-      console.warn('[Demo Auth] Role switch failed:', err);
+  // Switch UI active role strictly between legitimate roles assigned in user.roles
+  const switchActiveRole = (newRole: UserRole): boolean => {
+    if (!currentUser) return false;
+    // CRITICAL SECURITY RULE: Only allow switching to roles actually assigned in user.roles
+    if (!currentUser.roles?.includes(newRole)) {
+      console.warn(`[Auth] Cannot switch to role "${newRole}" because it is not assigned to this user.`);
+      return false;
     }
-    return false;
+
+    setCurrentUser({
+      ...currentUser,
+      role: newRole,
+    });
+    return true;
   };
 
   return (
@@ -609,7 +539,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signOut,
         logout: signOut,
         refreshUser,
-        switchMasterRole,
+        switchActiveRole,
       }}
     >
       {children}

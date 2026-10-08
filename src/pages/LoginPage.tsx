@@ -344,6 +344,20 @@ export const LoginPage: React.FC = () => {
                   ? 'Sign up with your official institutional email.'
                   : 'Institutional & Master Administrator Access.'}
               </p>
+              {!isSignUpMode && entryPoint === 'ADMIN' && (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('admin@vitbhopal.ac.in');
+                      setPassword('admin9211');
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-full text-[11px] font-semibold border border-purple-200 transition-colors cursor-pointer"
+                  >
+                    <span>Click here to fill: admin@vitbhopal.ac.in (admin9211)</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Common Credentials Form: Email + Password */}

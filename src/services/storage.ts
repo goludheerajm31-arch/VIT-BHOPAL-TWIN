@@ -58,7 +58,9 @@ import {
   mapFacultyApplicationToDb,
   mapDbToStudent,
   mapStudentToDb,
+  mapDbToUserRole,
   deleteEventPosterFile,
+  deleteCampusGuideFile,
 } from '../lib/supabase';
 import { isEventExpired, parseEventDateTimeToIST } from '../lib/dateUtils';
 export { isEventExpired, parseEventDateTimeToIST } from '../lib/dateUtils';
@@ -139,6 +141,7 @@ class StorageService {
         savedRes,
         auditRes,
         studentsRes,
+        userRolesRes,
       ] = await Promise.all([
         supabase.from('locations').select('*').order('name', { ascending: true }),
         supabase.from('events').select('*').order('date', { ascending: true }),
@@ -166,9 +169,18 @@ class StorageService {
           (res) => res,
           () => ({ data: [], error: null } as any)
         ),
+        supabase.from('user_roles').select('*').then(
+          (res) => res,
+          () => ({ data: [], error: null } as any)
+        ),
       ]);
 
       let hasUpdates = false;
+
+      if (!userRolesRes.error && userRolesRes.data && userRolesRes.data.length > 0) {
+        this.memoryUserRoles = userRolesRes.data.map(mapDbToUserRole);
+        hasUpdates = true;
+      }
 
       if (!studentsRes.error && studentsRes.data && studentsRes.data.length > 0) {
         this.memoryStudents = studentsRes.data.map(mapDbToStudent);
@@ -262,40 +274,20 @@ class StorageService {
     if (!detail || !detail.table) return;
 
     const { table, eventType, new: newRecord, old: oldRecord } = detail;
+    let hasChanges = false;
 
     if (table === 'events') {
       if (eventType === 'INSERT' && newRecord) {
         const mapped = mapDbToEvent(newRecord);
         this.memoryEvents = [mapped, ...this.memoryEvents.filter((e) => e.id !== mapped.id)];
+        hasChanges = true;
       } else if (eventType === 'UPDATE' && newRecord) {
         const mapped = mapDbToEvent(newRecord);
         this.memoryEvents = this.memoryEvents.map((e) => (e.id === mapped.id ? mapped : e));
+        hasChanges = true;
       } else if (eventType === 'DELETE' && oldRecord) {
         this.memoryEvents = this.memoryEvents.filter((e) => e.id !== oldRecord.id);
-      }
-    } else if (table === 'locations') {
-      if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
-        const mapped = mapDbToLocation(newRecord);
-        const index = this.memoryLocations.findIndex((l) => l.id === mapped.id);
-        if (index >= 0) {
-          this.memoryLocations[index] = mapped;
-        } else {
-          this.memoryLocations = [mapped, ...this.memoryLocations];
-        }
-      } else if (eventType === 'DELETE' && oldRecord) {
-        this.memoryLocations = this.memoryLocations.filter((l) => l.id !== oldRecord.id);
-      }
-    } else if (table === 'faculty') {
-      if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
-        const mapped = mapDbToFaculty(newRecord);
-        const index = this.memoryFaculty.findIndex((f) => f.id === mapped.id);
-        if (index >= 0) {
-          this.memoryFaculty[index] = mapped;
-        } else {
-          this.memoryFaculty = [mapped, ...this.memoryFaculty];
-        }
-      } else if (eventType === 'DELETE' && oldRecord) {
-        this.memoryFaculty = this.memoryFaculty.filter((f) => f.id !== oldRecord.id);
+        hasChanges = true;
       }
     } else if (table === 'announcements') {
       if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
@@ -306,20 +298,24 @@ class StorageService {
         } else {
           this.memoryAnnouncements = [mapped, ...this.memoryAnnouncements];
         }
+        hasChanges = true;
       } else if (eventType === 'DELETE' && oldRecord) {
         this.memoryAnnouncements = this.memoryAnnouncements.filter((a) => a.id !== oldRecord.id);
+        hasChanges = true;
       }
-    } else if (table === 'publishers') {
+    } else if (table === 'faculty') {
       if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
-        const mapped = mapDbToPublisher(newRecord);
-        const index = this.memoryPublishers.findIndex((p) => p.id === mapped.id);
+        const mapped = mapDbToFaculty(newRecord);
+        const index = this.memoryFaculty.findIndex((f) => f.id === mapped.id);
         if (index >= 0) {
-          this.memoryPublishers[index] = mapped;
+          this.memoryFaculty[index] = mapped;
         } else {
-          this.memoryPublishers = [mapped, ...this.memoryPublishers];
+          this.memoryFaculty = [mapped, ...this.memoryFaculty];
         }
+        hasChanges = true;
       } else if (eventType === 'DELETE' && oldRecord) {
-        this.memoryPublishers = this.memoryPublishers.filter((p) => p.id !== oldRecord.id);
+        this.memoryFaculty = this.memoryFaculty.filter((f) => f.id !== oldRecord.id);
+        hasChanges = true;
       }
     } else if (table === 'campus_guides') {
       if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
@@ -331,8 +327,60 @@ class StorageService {
         } else {
           this.memoryCampusGuides = [mapped, ...this.memoryCampusGuides];
         }
+        hasChanges = true;
       } else if (eventType === 'DELETE' && oldRecord) {
         this.memoryCampusGuides = this.memoryCampusGuides.filter((g) => g.id !== oldRecord.id);
+        hasChanges = true;
+      }
+    } else if (table === 'locations') {
+      if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
+        const mapped = mapDbToLocation(newRecord);
+        const index = this.memoryLocations.findIndex((l) => l.id === mapped.id);
+        if (index >= 0) {
+          this.memoryLocations[index] = mapped;
+        } else {
+          this.memoryLocations = [mapped, ...this.memoryLocations];
+        }
+        hasChanges = true;
+      } else if (eventType === 'DELETE' && oldRecord) {
+        this.memoryLocations = this.memoryLocations.filter((l) => l.id !== oldRecord.id);
+        hasChanges = true;
+      }
+    } else if (table === 'publishers') {
+      if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
+        const mapped = mapDbToPublisher(newRecord);
+        const index = this.memoryPublishers.findIndex((p) => p.id === mapped.id);
+        if (index >= 0) {
+          this.memoryPublishers[index] = mapped;
+        } else {
+          this.memoryPublishers = [mapped, ...this.memoryPublishers];
+        }
+        hasChanges = true;
+      } else if (eventType === 'DELETE' && oldRecord) {
+        this.memoryPublishers = this.memoryPublishers.filter((p) => p.id !== oldRecord.id);
+        hasChanges = true;
+      }
+    } else if (table === 'saved_items') {
+      if (eventType === 'INSERT' && newRecord) {
+        if (newRecord.item_type === 'EVENT') {
+          if (!this.memorySavedEvents.has(newRecord.user_id)) {
+            this.memorySavedEvents.set(newRecord.user_id, new Set());
+          }
+          this.memorySavedEvents.get(newRecord.user_id)!.add(newRecord.item_id);
+        } else if (newRecord.item_type === 'LOCATION') {
+          if (!this.memorySavedLocations.has(newRecord.user_id)) {
+            this.memorySavedLocations.set(newRecord.user_id, new Set());
+          }
+          this.memorySavedLocations.get(newRecord.user_id)!.add(newRecord.item_id);
+        }
+        hasChanges = true;
+      } else if (eventType === 'DELETE' && oldRecord) {
+        if (oldRecord.item_type === 'EVENT' && this.memorySavedEvents.has(oldRecord.user_id)) {
+          this.memorySavedEvents.get(oldRecord.user_id)!.delete(oldRecord.item_id);
+        } else if (oldRecord.item_type === 'LOCATION' && this.memorySavedLocations.has(oldRecord.user_id)) {
+          this.memorySavedLocations.get(oldRecord.user_id)!.delete(oldRecord.item_id);
+        }
+        hasChanges = true;
       }
     } else if (table === 'faculty_applications') {
       if ((eventType === 'INSERT' || eventType === 'UPDATE') && newRecord) {
@@ -343,13 +391,20 @@ class StorageService {
         } else {
           this.memoryFacultyApplications = [mapped, ...this.memoryFacultyApplications];
         }
+        hasChanges = true;
       } else if (eventType === 'DELETE' && oldRecord) {
         this.memoryFacultyApplications = this.memoryFacultyApplications.filter((a) => a.id !== oldRecord.id);
+        hasChanges = true;
       }
     } else if (table === 'audit_logs') {
       if (eventType === 'INSERT' && newRecord) {
         this.memoryAuditLogs = [newRecord, ...this.memoryAuditLogs].slice(0, 50);
+        hasChanges = true;
       }
+    }
+
+    if (hasChanges) {
+      emitChange({ source: 'realtime', table, eventType });
     }
   }
 
@@ -525,7 +580,7 @@ class StorageService {
       }
 
       // Step 3: Delete the old poster only after the new upload/reference succeeds in the database
-      if (existing?.storagePath && event.storagePath && existing.storagePath !== event.storagePath) {
+      if (existing?.storagePath && (!event.storagePath || existing.storagePath !== event.storagePath)) {
         deleteEventPosterFile(existing.storagePath).catch((err) =>
           console.warn('[Storage] Clean up previous poster error:', err)
         );
@@ -1512,9 +1567,15 @@ class StorageService {
 
     if (isSupabaseConfigured() && supabase) {
       const dbPayload = mapFacultyToDb(normalizedFaculty);
-      const { error } = await supabase.from('faculty').upsert(dbPayload);
+
+      const { data, error, status, statusText } = await supabase.from('faculty').upsert(dbPayload).select();
       if (error) {
-        console.error('[Supabase Store] Error saving faculty:', error.message);
+        console.error('[Supabase Store] Error saving faculty in PostgreSQL:', {
+          status,
+          statusText,
+          message: error.message,
+          code: error.code,
+        });
         if (
           error.code === '23505' ||
           error.message.toLowerCase().includes('unique') ||
@@ -2326,6 +2387,31 @@ class StorageService {
         console.error('[Supabase Store] Error saving campus guide:', error.message);
         throw new Error(`Database error saving guide: ${error.message}`);
       }
+
+      // Sync and persist attachments in database
+      if (guideToSave.attachments && guideToSave.attachments.length > 0) {
+        for (const att of guideToSave.attachments) {
+          const attDbPayload = mapGuideAttachmentToDb(att);
+          const { error: attErr } = await supabase.from('campus_guide_attachments').upsert(attDbPayload);
+          if (attErr) {
+            console.warn('[Supabase Store] Error saving guide attachment:', attErr.message);
+          }
+        }
+      }
+
+      // Clean up any removed attachments (both from database and Supabase Storage)
+      if (existing?.attachments && existing.attachments.length > 0) {
+        const currentIds = new Set((guideToSave.attachments || []).map((a) => a.id));
+        const removed = existing.attachments.filter((a) => !currentIds.has(a.id));
+        for (const rem of removed) {
+          await supabase.from('campus_guide_attachments').delete().eq('id', rem.id);
+          if (rem.storagePath) {
+            deleteCampusGuideFile(rem.storagePath).catch((err) =>
+              console.warn('[Storage] Clean up previous attachment error:', err)
+            );
+          }
+        }
+      }
     }
 
     const list = [...this.memoryCampusGuides];
@@ -2391,11 +2477,26 @@ class StorageService {
   }
 
   async deleteCampusGuide(id: string): Promise<boolean> {
+    const target = this.memoryCampusGuides.find((g) => g.id === id);
+
     if (isSupabaseConfigured() && supabase) {
       const { error } = await supabase.from('campus_guides').delete().eq('id', id);
       if (error) {
         console.error('[Supabase Store] Error deleting campus guide:', error.message);
         throw new Error(`Database error deleting guide: ${error.message}`);
+      }
+    }
+
+    // Clean up attachment files from Supabase Storage
+    if (target?.attachments && target.attachments.length > 0) {
+      for (const att of target.attachments) {
+        if (att.storagePath) {
+          try {
+            await deleteCampusGuideFile(att.storagePath);
+          } catch (err: any) {
+            console.warn('[Supabase Storage] Warning deleting attachment during guide deletion:', err?.message);
+          }
+        }
       }
     }
 
@@ -2429,10 +2530,27 @@ class StorageService {
   }
 
   async deleteGuideAttachment(attachmentId: string, guideId?: string): Promise<boolean> {
+    let attachmentStoragePath: string | undefined;
+    for (const g of this.memoryCampusGuides) {
+      const found = g.attachments?.find((a) => a.id === attachmentId);
+      if (found) {
+        attachmentStoragePath = found.storagePath;
+        break;
+      }
+    }
+
     if (isSupabaseConfigured() && supabase) {
       const { error } = await supabase.from('campus_guide_attachments').delete().eq('id', attachmentId);
       if (error) {
         console.error('[Supabase Store] Error deleting guide attachment:', error.message);
+      }
+    }
+
+    if (attachmentStoragePath) {
+      try {
+        await deleteCampusGuideFile(attachmentStoragePath);
+      } catch (err: any) {
+        console.warn('[Supabase Storage] Warning deleting attachment file:', err?.message);
       }
     }
 

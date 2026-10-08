@@ -874,7 +874,7 @@ CREATE POLICY "Users read own publisher applications or admin reads all"
   ON public.publisher_applications FOR SELECT
   TO authenticated, anon, service_role
   USING (
-    (auth.uid() IS NOT NULL AND auth.uid() = auth_user_id) OR
+    (auth.uid() IS NOT NULL AND auth.uid()::text = auth_user_id) OR
     (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
     public.is_admin()
   );
@@ -900,7 +900,7 @@ CREATE POLICY "Users read own role authorizations or admin reads all"
   ON public.user_roles FOR SELECT
   TO authenticated, anon, service_role
   USING (
-    (auth.uid() IS NOT NULL AND auth.uid() = user_id) OR
+    (auth.uid() IS NOT NULL AND auth.uid()::text = user_id) OR
     (auth.jwt()->>'email' IS NOT NULL AND LOWER(TRIM(email)) = LOWER(TRIM(auth.jwt()->>'email'))) OR
     public.is_admin()
   );
@@ -982,4 +982,27 @@ CREATE POLICY "Authorized delete event posters"
   ON storage.objects FOR DELETE
   TO authenticated, anon, service_role
   USING (bucket_id = 'event-posters');
+
+-- Public can read files from campus-guides bucket
+CREATE POLICY "Public read campus guides"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'campus-guides');
+
+-- Authenticated publishers/admins can upload campus guide files
+CREATE POLICY "Authorized upload campus guides"
+  ON storage.objects FOR INSERT
+  TO authenticated, service_role
+  WITH CHECK (bucket_id = 'campus-guides');
+
+-- Authorized users can update campus guide files
+CREATE POLICY "Authorized update campus guides"
+  ON storage.objects FOR UPDATE
+  TO authenticated, service_role
+  USING (bucket_id = 'campus-guides');
+
+-- Authorized users or admins can delete campus guide files
+CREATE POLICY "Authorized delete campus guides"
+  ON storage.objects FOR DELETE
+  TO authenticated, service_role
+  USING (bucket_id = 'campus-guides');
 
