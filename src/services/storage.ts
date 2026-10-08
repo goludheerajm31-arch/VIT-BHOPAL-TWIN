@@ -690,8 +690,20 @@ class StorageService {
   }
 
   async saveAnnouncement(announcement: Announcement): Promise<Announcement> {
+    // Defend against foreign key constraint violations (announcements.publisher_id -> publishers.id)
+    let safePublisherId = announcement.publisherId;
+    const knownPublishers = this.memoryPublishers;
+    if (!safePublisherId || !knownPublishers.some((p) => p.id === safePublisherId)) {
+      safePublisherId = knownPublishers[0]?.id || 'pub-ai-club';
+    }
+
+    const safeAnnouncement: Announcement = {
+      ...announcement,
+      publisherId: safePublisherId,
+    };
+
     if (isSupabaseConfigured() && supabase) {
-      const { error } = await supabase.from('announcements').upsert(mapAnnouncementToDb(announcement));
+      const { error } = await supabase.from('announcements').upsert(mapAnnouncementToDb(safeAnnouncement));
       if (error) {
         console.error('[Supabase Store] Error saving announcement:', error.message);
         throw new Error(`Database error saving announcement: ${error.message}`);
@@ -699,17 +711,17 @@ class StorageService {
     }
 
     const list = [...this.memoryAnnouncements];
-    const index = list.findIndex((a) => a.id === announcement.id);
+    const index = list.findIndex((a) => a.id === safeAnnouncement.id);
     if (index >= 0) {
-      list[index] = announcement;
+      list[index] = safeAnnouncement;
     } else {
-      list.unshift(announcement);
+      list.unshift(safeAnnouncement);
     }
     this.memoryAnnouncements = list;
     emitChange();
 
-    this.logAudit('SAVE', 'ANNOUNCEMENT', announcement.id, { title: announcement.title, status: announcement.status });
-    return announcement;
+    this.logAudit('SAVE', 'ANNOUNCEMENT', safeAnnouncement.id, { title: safeAnnouncement.title, status: safeAnnouncement.status });
+    return safeAnnouncement;
   }
 
   async verifyAnnouncement(

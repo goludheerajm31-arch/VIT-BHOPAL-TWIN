@@ -586,6 +586,7 @@ export const CampusHubPage: React.FC = () => {
       <PostAnnouncementModal
         isOpen={isPostAnnouncementOpen}
         onClose={() => setIsPostAnnouncementOpen(false)}
+        locations={storage.getLocations()}
         onSuccess={() => {
           loadData();
           toast('Announcement posted successfully!', 'success');

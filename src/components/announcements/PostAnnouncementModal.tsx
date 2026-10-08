@@ -21,17 +21,18 @@ interface PostAnnouncementModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
-  locations: CampusLocation[];
+  locations?: CampusLocation[];
 }
 
 export const PostAnnouncementModal: React.FC<PostAnnouncementModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  locations,
+  locations: propLocations,
 }) => {
   const { user, role } = useAuth();
   const { toast } = useToast();
+  const locations = propLocations && propLocations.length > 0 ? propLocations : storage.getLocations();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -80,11 +81,27 @@ export const PostAnnouncementModal: React.FC<PostAnnouncementModalProps> = ({
       const announcementId = `ann-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const now = new Date().toISOString();
 
+      // Resolve a valid publisher_id to satisfy foreign key constraint: public.announcements.publisher_id -> public.publishers.id
+      const registeredPublishers = storage.getPublishers();
+      let effectivePublisherId = user?.publisherId;
+      if (!effectivePublisherId && user?.email) {
+        const pubByEmail = storage.getPublisherByEmail(user.email);
+        if (pubByEmail) effectivePublisherId = pubByEmail.id;
+      }
+      if (!effectivePublisherId && user?.id) {
+        const pubByUser = storage.getPublisherByUserId(user.id);
+        if (pubByUser) effectivePublisherId = pubByUser.id;
+      }
+      // Fallback to campus publisher if user is a student or not a dedicated registered publisher entity
+      if (!effectivePublisherId || !registeredPublishers.some((p) => p.id === effectivePublisherId)) {
+        effectivePublisherId = registeredPublishers[0]?.id || 'pub-ai-club';
+      }
+
       const newAnnouncement = {
         id: announcementId,
         title: title.trim(),
         description: description.trim(),
-        publisherId: user?.id || `user-${Date.now()}`,
+        publisherId: effectivePublisherId,
         publisherName: user?.name ? (isStudent ? `${user.name} (Student)` : user.name) : 'Student Member',
         locationId: selectedLoc?.id || undefined,
         locationName: selectedLoc?.name || undefined,
